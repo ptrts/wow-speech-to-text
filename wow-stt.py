@@ -11,6 +11,8 @@ import pyautogui
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
+from overlay import start_overlay, show_text, clear_text
+
 # ================== НАСТРОЙКИ ==================
 
 # Папка, где лежит текущий .py файл
@@ -27,7 +29,7 @@ MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
 # MODEL_PATH = BASE_DIR / "vosk-model-ru-0.10"
 
 # Слова-триггеры
-ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "би": "bg", "сказать": "s", "эс": "s", "крик": "y", "гильдия": "g", "гг": "g"}
+ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "крик": "y", "гильдия": "g"}
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
 SEND_WORDS = {"отправить", "готово", "окей", "ок"}  # отправляют в чат
@@ -40,7 +42,7 @@ KEY_DELAY = 0.05  # секунды
 
 state = "idle"  # "idle" | "timer" | "recording"
 prev_partial_text: str | None = None
-start_command: str | None = None
+chat_channel: str | None = None
 final_tokens: list[str] = []
 final_text_preview: str | None = None
 q = queue.Queue()  # очередь аудио-данных
@@ -186,7 +188,7 @@ def send_unicode_text(text: str, per_char_delay: float = 0.0):
 
 # ================== ОТПРАВКА В ЧАТ WoW ==================
 
-def send_to_wow_chat(chat_channel: str, text: str):
+def send_to_wow_chat(channel: str, text: str):
     """
     Отправить сообщение в /bg:
       Enter, печать "/bg <текст>" как Unicode, Enter.
@@ -196,7 +198,7 @@ def send_to_wow_chat(chat_channel: str, text: str):
         print("send_to_wow_chat. Пустой текст, не отправляем")
         return
 
-    full_msg = f"/{chat_channel} {text}"
+    full_msg = f"{channel} {text}"
     print(f"send_to_wow_chat. Отправляем: {full_msg!r}")
 
     # Небольшая пауза, чтобы не перебивать предыдущее действие
@@ -218,12 +220,13 @@ def send_to_wow_chat(chat_channel: str, text: str):
 # ================== ОБРАБОТКА РАСПОЗНАННЫХ ФРАЗ ==================
 
 def to_idle():
-    global state, final_tokens, start_command, prev_partial_text, final_text_preview
+    global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
     print("to_idle")
     final_tokens = []
-    start_command = None
+    chat_channel = None
     prev_partial_text = None
     final_text_preview = None
+    clear_text()
     schedule_state("idle")
 
 
@@ -414,6 +417,8 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
     final_text_preview = "".join(tokens)
 
+    show_text(f"{chat_channel} {final_text_preview}")
+
     print(">>>")
     print(">>>")
     print(final_text_preview)
@@ -422,7 +427,7 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
 
 def handle_text(partial_text: str, is_final: bool):
-    global state, prev_partial_text, final_tokens, start_command, final_text_preview
+    global state, prev_partial_text, final_tokens, chat_channel, final_text_preview
 
     partial_text = partial_text.strip().lower()
     if not partial_text:
@@ -452,13 +457,12 @@ def handle_text(partial_text: str, is_final: bool):
         print("handle_text. Нет стоп команды")
         if is_final:
             final_tokens.extend(tokens)
-            print(f"handle_text. Фраза финальная. Сохранили tokens={tokens} в final_tokens={final_tokens}, final_start_command={start_command}")
+            print(f"handle_text. Фраза финальная. Сохранили tokens={tokens} в final_tokens={final_tokens}, chat_channel={chat_channel}")
             tokens.clear()
         refresh_final_text_preview(tokens)
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
         refresh_final_text_preview(tokens)
-        chat_channel = ACTIVATE_WORD_TO_CHAT_CHANNEL[start_command]
         if final_text_preview:
             print("handle_text. Вызываем отправку в чат")
             send_to_wow_chat(chat_channel, final_text_preview)
@@ -485,7 +489,7 @@ def schedule_state(new_state):
 
 
 def handle_text_idle(partial_text: str):
-    global state, prev_partial_text, start_command
+    global state, prev_partial_text, chat_channel
 
     partial_text = partial_text.strip().lower()
     if not partial_text:
@@ -505,6 +509,8 @@ def handle_text_idle(partial_text: str):
     # Если в idle нам попалась пачка слов со словом "запись" или аналогами, то включаем режим записи
     start_command_position, start_command = next(((i, w) for i, w in enumerate(tokens) if w in ACTIVATE_WORDS), (None, None))
     if start_command is not None:
+        chat_channel = f"/{ACTIVATE_WORD_TO_CHAT_CHANNEL[start_command]}"
+        show_text(chat_channel)
         schedule_state("recording")
         prev_partial_text = None
 
@@ -523,6 +529,8 @@ def audio_callback(indata, frames, time_info, status):
 
 def recognition_loop():
     global idle_recognizer, recording_recognizer, state
+
+    start_overlay()
 
     # Поднимаем нашу русскую восковую модель
     model = Model(str(MODEL_PATH))
