@@ -16,9 +16,14 @@ from vosk import Model, KaldiRecognizer
 BASE_DIR = Path(__file__).resolve().parent
 
 # путь к распакованной русской модели Vosk
+
+SAMPLE_RATE = 16000
+BLOCK_SIZE = 1600
+
 MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
 
-SAMPLE_RATE = 16000  # частота для модели; 16k - стандарт для vosk-small моделей
+# MODEL_PATH = BASE_DIR / "vosk-model-ru-0.42"
+# MODEL_PATH = BASE_DIR / "vosk-model-ru-0.10"
 
 # Слова-триггеры
 ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "би": "bg", "сказать": "s", "эс": "s", "крик": "y", "гильдия": "g", "гг": "g"}
@@ -339,7 +344,7 @@ def recognition_loop():
     # Открываем сырой входящий поток звуковых данных.
     with sd.RawInputStream(
             samplerate=SAMPLE_RATE, # Частота дискретизации - 16 000 сэмплов в секунду
-            blocksize=1600, # В одном блоке - 1600 сэмплов. Это - 0.1 секунды, т.к. частота дискретизации - 16 000 сэмплов в секунду
+            blocksize=BLOCK_SIZE, # В одном блоке - 1600 сэмплов. Это - 0.1 секунды, т.к. частота дискретизации - 16 000 сэмплов в секунду
             dtype='int16', # Каждый сэмпл - это 16 бит.
             channels=1, # Один канал (моно)
             callback=audio_callback # Для обработки сэмплов использовать вот такой описанный нами выше обработчик
