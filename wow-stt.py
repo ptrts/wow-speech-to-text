@@ -29,7 +29,7 @@ MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
 # MODEL_PATH = BASE_DIR / "vosk-model-ru-0.10"
 
 # Слова-триггеры
-ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "крик": "y", "гильдия": "g"}
+ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "крикнуть": "y", "гильдия": "g"}
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
 SEND_WORDS = {"отправить", "готово", "окей", "ок"}  # отправляют в чат
@@ -562,7 +562,7 @@ def recognition_loop():
 
             if state == "idle":
                 new_recognizer_name = "idle_recognizer"
-                new_recognizer = idle_recognizer
+                new_recognizer = recording_recognizer
             elif state == "recording":
                 new_recognizer_name = "recording_recognizer"
                 new_recognizer = recording_recognizer

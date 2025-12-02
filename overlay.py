@@ -64,7 +64,7 @@ def wnd_proc(hwnd, msg, wparam, lparam):
                 # Создаём большой шрифт один раз, через LOGFONT + CreateFontIndirect
                 if H_FONT is None:
                     logfont = win32gui.LOGFONT()
-                    logfont.lfHeight = -64  # размер шрифта (по модулю больше → крупнее)
+                    logfont.lfHeight = -32  # размер шрифта (по модулю больше → крупнее)
                     logfont.lfWeight = win32con.FW_BOLD
                     logfont.lfCharSet = win32con.DEFAULT_CHARSET
                     logfont.lfQuality = win32con.DEFAULT_QUALITY
@@ -169,10 +169,10 @@ def _overlay_thread():
 
     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
 
-    # Для проверки: показываем тестовый текст на 3 секунды
+    # Для проверки: показываем тестовый текст
     def demo():
         time.sleep(1)
-        show_text("Overlay OK (LOGFONT)", duration=3)
+        show_text("Overlay OK (LOGFONT)", duration=1)
 
     threading.Thread(target=demo, daemon=True).start()
 
