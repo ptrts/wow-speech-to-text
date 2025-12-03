@@ -13,6 +13,7 @@ from vosk import Model, KaldiRecognizer
 
 from overlay import start_overlay, show_text, clear_text
 from beeps import play_sound
+from russian_numerals import replace_russian_numbers
 
 # ================== НАСТРОЙКИ ==================
 
@@ -322,6 +323,8 @@ def refresh_final_text_preview(new_tokens: list[str]):
                 i = 0
         else:
             i += 1
+
+    tokens = replace_russian_numbers(tokens)
 
     print(f"refresh_final_text_preview. final_tokens={final_tokens}, new_tokens={new_tokens}, tokens={tokens}")
 
