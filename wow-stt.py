@@ -12,6 +12,7 @@ import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
 from overlay import start_overlay, show_text, clear_text
+from beeps import play_sound
 
 # ================== НАСТРОЙКИ ==================
 
@@ -33,7 +34,7 @@ ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "кри�
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
 SEND_WORDS = {"отправить", "готово", "окей", "ок"}  # отправляют в чат
-CANCEL_WORDS = {"сброс", "отмена", "очистить"}  # сбрасывают буфер
+CANCEL_WORDS = {"сброс", "отмена", "очистить", "кыш"}  # сбрасывают буфер
 
 # Задержки между нажатиями, чтобы игра точно всё проглотила
 KEY_DELAY = 0.05  # секунды
@@ -220,28 +221,17 @@ def send_to_wow_chat(channel: str, text: str):
 # ================== ОБРАБОТКА РАСПОЗНАННЫХ ФРАЗ ==================
 
 def to_idle():
-    global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
     print("to_idle")
-    final_tokens = []
-    chat_channel = None
-    prev_partial_text = None
-    final_text_preview = None
-    clear_text()
-    schedule_state("idle")
 
+    def schedule_state_callback():
+        global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
+        final_tokens = []
+        chat_channel = None
+        prev_partial_text = None
+        final_text_preview = None
+        clear_text()
 
-def reset_recognizer(recognizer):
-    global q
-    if recognizer is not None:
-        recognizer.Reset()
-        print("reset_recognizer. Reset() called")
-
-    # вычищаем очередь, чтобы не доедать куски старой фразы
-    try:
-        while True:
-            q.get_nowait()
-    except queue.Empty:
-        pass
+    schedule_state("idle", schedule_state_callback)
 
 
 class TextModificationCommand:
@@ -437,6 +427,8 @@ def handle_text(partial_text: str, is_final: bool):
         print("handle_text. Same partial")
         return
 
+    print(f"handle_text. partial_text={partial_text}, is_final={is_final}")
+
     prev_partial_text = partial_text
 
     # Разбиваем текст частичного результата на слова
@@ -465,27 +457,33 @@ def handle_text(partial_text: str, is_final: bool):
         refresh_final_text_preview(tokens)
         if final_text_preview:
             print("handle_text. Вызываем отправку в чат")
+            play_sound("sending_started")
             send_to_wow_chat(chat_channel, final_text_preview)
+            play_sound("sending_complete")
         else:
+            play_sound("sending_error")
             print("handle_text. Пытались отправить, но буфер пуст")
         to_idle()
 
     elif stop_command in CANCEL_WORDS:
         print("handle_text. Сброс")
+        play_sound("editing_cancelled")
         to_idle()
 
 
-def on_schedule_state_timer(new_state):
+def on_schedule_state_timer(new_state, callback):
     global state
     old_state = state
     state = new_state
+    if callback:
+        callback()
     print(f"handle_text_idle. {old_state} => {state}")
 
 
-def schedule_state(new_state):
+def schedule_state(new_state, callback=None):
     global state
     state = "timer"
-    threading.Timer(1.0, on_schedule_state_timer, args=(new_state,)).start()
+    threading.Timer(1.0, on_schedule_state_timer, args=(new_state, callback)).start()
 
 
 def handle_text_idle(partial_text: str):
@@ -510,8 +508,11 @@ def handle_text_idle(partial_text: str):
     start_command_position, start_command = next(((i, w) for i, w in enumerate(tokens) if w in ACTIVATE_WORDS), (None, None))
     if start_command is not None:
         chat_channel = f"/{ACTIVATE_WORD_TO_CHAT_CHANNEL[start_command]}"
-        show_text(chat_channel)
-        schedule_state("recording")
+
+        def schedule_state_callback():
+            show_text(chat_channel)
+
+        schedule_state("recording", schedule_state_callback)
         prev_partial_text = None
 
 
@@ -537,64 +538,98 @@ def recognition_loop():
 
     # На основе этой модели поднимаем распознаватели речи
 
+    recording_recognizer = KaldiRecognizer(model, SAMPLE_RATE)
+
     grammar = json.dumps(list(ACTIVATE_WORDS) + ["[unk]"], ensure_ascii=False)
     idle_recognizer = KaldiRecognizer(model, SAMPLE_RATE, grammar)
-
-    recording_recognizer = KaldiRecognizer(model, SAMPLE_RATE)
+    # idle_recognizer = recording_recognizer
 
     # Теперь будем работать с микрофоном через модуль sounddevice (локально - sd).
     # Открываем сырой входящий поток звуковых данных.
-    with sd.RawInputStream(
-            samplerate=SAMPLE_RATE,  # Частота дискретизации - 16 000 сэмплов в секунду
-            blocksize=BLOCK_SIZE,  # В одном блоке - 1600 сэмплов. Это - 0.1 секунды, т.к. частота дискретизации - 16 000 сэмплов в секунду
-            dtype='int16',  # Каждый сэмпл - это 16 бит.
-            channels=1,  # Один канал (моно)
-            callback=audio_callback  # Для обработки сэмплов использовать вот такой описанный нами выше обработчик
-    ):
-        # Входящий потом цифрового аудио инициализирован.
-        # Сообщаем пользователю, что он уже может начинать говорить.
-        print("recognition_loop. Начали слушать микрофон. Скажите одну из команд старта, чтобы начать диктовку.")
+    stream = init_audio_stream()
 
-        recognizer = None
+    # Входящий потом цифрового аудио инициализирован.
+    # Сообщаем пользователю, что он уже может начинать говорить.
+    print("recognition_loop. Начали слушать микрофон. Скажите одну из команд старта, чтобы начать диктовку.")
 
-        # И садимся в мертвый цикл
-        while True:
+    recognizer = None
 
-            if state == "idle":
-                new_recognizer_name = "idle_recognizer"
-                new_recognizer = recording_recognizer
-            elif state == "recording":
-                new_recognizer_name = "recording_recognizer"
-                new_recognizer = recording_recognizer
+    idle_recognizer_final = False
+    is_final = False
+
+    # И садимся в мертвый цикл
+    while True:
+
+        local_state = state
+
+        if local_state == "idle":
+            new_recognizer_name = "idle"
+            new_recognizer = idle_recognizer
+        elif local_state == "recording":
+            new_recognizer_name = "recording"
+            new_recognizer = recording_recognizer
+        else:
+            new_recognizer_name = "[no recognizer]"
+            new_recognizer = None
+
+        if recognizer != new_recognizer:
+            print(f"recognition_loop. new_recognizer_name={new_recognizer_name}")
+
+            stream.stop()
+
+            try:
+                while True:
+                    q.get_nowait()
+            except queue.Empty:
+                pass
+
+            if recognizer:
+                recognizer.Reset()
+
+            recognizer = new_recognizer
+
+            if recognizer:
+                recognizer.Reset()
+                stream.start()
+                play_sound(new_recognizer_name)
+
+        if not recognizer:
+            continue
+
+        # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
+        try:
+            data = q.get(timeout=1)
+        except queue.Empty:
+            continue
+
+        is_final = recognizer.AcceptWaveform(data)
+
+        idle_recognizer_final = recognizer == idle_recognizer and is_final
+
+        if is_final:
+            full_result = json.loads(recognizer.Result())
+            text = full_result.get("text", "")
+        else:
+            partial_result = json.loads(recognizer.PartialResult())
+            text = partial_result.get("partial", "")
+
+        if text:
+            if local_state == "idle":
+                # if is_final:
+                #     handle_text_idle(text)
+                handle_text_idle(text)
             else:
-                new_recognizer_name = "[no recognizer]"
-                new_recognizer = None
+                handle_text(text, is_final)
 
-            if recognizer != new_recognizer:
-                print(f"recognition_loop. new_recognizer_name={new_recognizer_name}")
-                recognizer = new_recognizer
-                reset_recognizer(idle_recognizer)
-                reset_recognizer(recording_recognizer)
 
-            # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
-            data = q.get()
-
-            if not recognizer:
-                continue
-
-            is_final = recognizer.AcceptWaveform(data)
-            if is_final:
-                full_result = json.loads(recognizer.Result())
-                text = full_result.get("text", "")
-            else:
-                partial_result = json.loads(recognizer.PartialResult())
-                text = partial_result.get("partial", "")
-
-            if text:
-                if state == "idle":
-                    handle_text_idle(text)
-                else:
-                    handle_text(text, is_final)
+def init_audio_stream():
+    return sd.RawInputStream(
+        samplerate=SAMPLE_RATE,  # Частота дискретизации - 16 000 сэмплов в секунду
+        blocksize=BLOCK_SIZE,  # В одном блоке - 1600 сэмплов. Это - 0.1 секунды, т.к. частота дискретизации - 16 000 сэмплов в секунду
+        dtype='int16',  # Каждый сэмпл - это 16 бит.
+        channels=1,  # Один канал (моно)
+        callback=audio_callback  # Для обработки сэмплов использовать вот такой описанный нами выше обработчик
+    )
 
 
 if __name__ == "__main__":
