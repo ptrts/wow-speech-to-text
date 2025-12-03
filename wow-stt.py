@@ -34,7 +34,7 @@ MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
 ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "крикнуть": "y", "гильдия": "g"}
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
-SEND_WORDS = {"отправить", "готово", "окей", "ок"}  # отправляют в чат
+SEND_WORDS = {"отправить", "готово", "окей", "ок", "дописать"}  # отправляют в чат
 CANCEL_WORDS = {"сброс", "отмена"}  # сбрасывают буфер
 
 # Задержки между нажатиями, чтобы игра точно всё проглотила
@@ -190,7 +190,7 @@ def send_unicode_text(text: str, per_char_delay: float = 0.0):
 
 # ================== ОТПРАВКА В ЧАТ WoW ==================
 
-def send_to_wow_chat(channel: str, text: str):
+def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     """
     Отправить сообщение в /bg:
       Enter, печать "/bg <текст>" как Unicode, Enter.
@@ -215,8 +215,9 @@ def send_to_wow_chat(channel: str, text: str):
     time.sleep(KEY_DELAY)
 
     # Отправляем
-    pyautogui.press("enter")
-    time.sleep(KEY_DELAY)
+    if not let_edit:
+        pyautogui.press("enter")
+        time.sleep(KEY_DELAY)
 
 
 # ================== ОБРАБОТКА РАСПОЗНАННЫХ ФРАЗ ==================
@@ -491,7 +492,7 @@ def handle_text(partial_text: str, is_final: bool):
         if final_text_preview:
             print("handle_text. Вызываем отправку в чат")
             play_sound("sending_started")
-            send_to_wow_chat(chat_channel, final_text_preview)
+            send_to_wow_chat(chat_channel, final_text_preview, let_edit=(stop_command == "дописать"))
             play_sound("sending_complete")
         else:
             play_sound("sending_error")
