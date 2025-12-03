@@ -5,6 +5,8 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 import threading
+import win32clipboard as cb
+import win32con
 
 import pyautogui
 import sounddevice as sd
@@ -15,6 +17,7 @@ from beeps import play_sound
 from russian_numerals import replace_russian_numbers
 from layout_switch import switch_to_russian
 from app_logging import logging, TRACE
+
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +185,22 @@ def send_unicode_text(text: str, per_char_delay: float = 0.0):
 
 # ================== ОТПРАВКА В ЧАТ WoW ==================
 
+def send_clipboard_paste(text: str):
+    if not text:
+        return
+
+    # Пишем в буфер обмена Юникод-строку
+    cb.OpenClipboard()
+    try:
+        cb.EmptyClipboard()
+        cb.SetClipboardData(win32con.CF_UNICODETEXT, text)
+    finally:
+        cb.CloseClipboard()
+
+    # Вставляем в активное окно
+    pyautogui.hotkey("ctrl", "v")
+
+
 def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     """
     Отправить сообщение в /bg:
@@ -202,8 +221,8 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     pyautogui.press("enter")
     time.sleep(KEY_DELAY)
 
-    # Печатаем строку целиком, независимо от раскладки
-    send_unicode_text(full_msg, per_char_delay=0.0)
+    # Вставляем текст через буфер
+    send_clipboard_paste(full_msg)
     time.sleep(KEY_DELAY)
 
     # Отправляем
