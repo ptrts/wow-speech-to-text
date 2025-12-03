@@ -14,6 +14,7 @@ from vosk import Model, KaldiRecognizer
 from overlay import start_overlay, show_text, clear_text
 from beeps import play_sound
 from russian_numerals import replace_russian_numbers
+from layout_switch import switch_to_russian
 
 # ================== НАСТРОЙКИ ==================
 
@@ -218,6 +219,8 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     if not let_edit:
         pyautogui.press("enter")
         time.sleep(KEY_DELAY)
+
+    switch_to_russian()
 
 
 # ================== ОБРАБОТКА РАСПОЗНАННЫХ ФРАЗ ==================
