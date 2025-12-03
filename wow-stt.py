@@ -28,10 +28,13 @@ BASE_DIR = Path(__file__).resolve().parent
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 1600
 
-MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
+# RECORDING_MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
+RECORDING_MODEL_PATH = BASE_DIR / "vosk-model-ru-0.42"
+# RECORDING_MODEL_PATH = BASE_DIR / "vosk-model-ru-0.10"
 
-# MODEL_PATH = BASE_DIR / "vosk-model-ru-0.42"
-# MODEL_PATH = BASE_DIR / "vosk-model-ru-0.10"
+IDLE_MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
+# IDLE_MODEL_PATH = BASE_DIR / "vosk-model-ru-0.42"
+# IDLE_MODEL_PATH = BASE_DIR / "vosk-model-ru-0.10"
 
 # Слова-триггеры
 ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "крикнуть": "y", "гильдия": "g"}
@@ -51,8 +54,6 @@ chat_channel: str | None = None
 final_tokens: list[str] = []
 final_text_preview: str | None = None
 q = queue.Queue()  # очередь аудио-данных
-idle_recognizer = None
-recording_recognizer = None
 
 # ================== Структуры и константы для SendInput ===
 
@@ -556,17 +557,24 @@ def audio_callback(indata, frames, time_info, status):
 
 
 def recognition_loop():
-    global idle_recognizer, recording_recognizer, state
+    global state
 
     start_overlay()
 
-    model = Model(str(MODEL_PATH))
+    recording_model = Model(str(RECORDING_MODEL_PATH))
 
-    recording_recognizer = KaldiRecognizer(model, SAMPLE_RATE)
+    def get_recording_recognizer():
+        return KaldiRecognizer(recording_model, SAMPLE_RATE)
 
+    if IDLE_MODEL_PATH == RECORDING_MODEL_PATH:
+        idle_model = recording_model
+    else:
+        idle_model = Model(str(IDLE_MODEL_PATH))
     grammar = json.dumps(list(ACTIVATE_WORDS) + ["[unk]"], ensure_ascii=False)
-    idle_recognizer = KaldiRecognizer(model, SAMPLE_RATE, grammar)
-    # idle_recognizer = recording_recognizer
+
+    def get_idle_recognizer():
+        # return recording_recognizer
+        return KaldiRecognizer(idle_model, SAMPLE_RATE, grammar)
 
     # Теперь будем работать с микрофоном через модуль sounddevice (локально - sd).
     # Открываем сырой входящий поток звуковых данных.
@@ -581,23 +589,14 @@ def recognition_loop():
     is_final = False
     old_recognizer = None
 
+    local_state: str | None = None
+
     # И садимся в мертвый цикл
     while True:
+        if state != local_state:
+            local_state = state
 
-        local_state = state
-
-        if local_state == "idle":
-            new_recognizer_name = "idle"
-            new_recognizer = idle_recognizer
-        elif local_state == "recording":
-            new_recognizer_name = "recording"
-            new_recognizer = recording_recognizer
-        else:
-            new_recognizer_name = "[no recognizer]"
-            new_recognizer = None
-
-        if recognizer != new_recognizer:
-            logger.debug("new_recognizer_name=%s", new_recognizer_name)
+            logger.debug("local_state=%s", local_state)
 
             # Если активный распознаватель еще не закончил работать, то
             # он какое-то время доработает до завершения фразы,
@@ -606,10 +605,15 @@ def recognition_loop():
                 old_recognizer = recognizer
                 logger.debug("old_recognizer is set")
 
-            recognizer = new_recognizer
+            if local_state == "idle":
+                recognizer = get_idle_recognizer()
+            elif local_state == "recording":
+                recognizer = get_recording_recognizer()
+            else:
+                recognizer = None
 
             if recognizer:
-                play_sound(new_recognizer_name)
+                play_sound(local_state)
 
         # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
         try:
