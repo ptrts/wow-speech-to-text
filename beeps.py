@@ -8,7 +8,7 @@ sound_queue = queue.Queue()
 # Набор звуков под разные события
 SOUND_MAP = {
     "editing_cancelled": ("beep", (110, 300)),
-    "idle":              ("beep", (220, 300)),
+    # "idle":              ("beep", (220, 300)),
     "recording":         ("beep", (330, 300)),
     "sending_started":   ("beep", (440, 300)),
     "sending_complete":  ("beep", (550, 300)),
@@ -56,4 +56,4 @@ def play_sound_stub(event_name: str):
     pass
 
 
-play_sound = play_sound_stub
+play_sound = play_sound_sync

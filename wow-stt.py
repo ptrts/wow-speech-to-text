@@ -231,7 +231,7 @@ def to_idle():
         final_text_preview = None
         clear_text()
 
-    schedule_state("idle", schedule_state_callback)
+    set_state("idle", schedule_state_callback)
 
 
 class TextModificationCommand:
@@ -480,10 +480,10 @@ def on_schedule_state_timer(new_state, callback):
     print(f"handle_text_idle. {old_state} => {state}")
 
 
-def schedule_state(new_state, callback=None):
+def set_state(new_state, callback=None):
     global state
     state = "timer"
-    threading.Timer(1.0, on_schedule_state_timer, args=(new_state, callback)).start()
+    threading.Timer(0.2, on_schedule_state_timer, args=(new_state, callback)).start()
 
 
 def handle_text_idle(partial_text: str):
@@ -512,7 +512,7 @@ def handle_text_idle(partial_text: str):
         def schedule_state_callback():
             show_text(chat_channel)
 
-        schedule_state("recording", schedule_state_callback)
+        set_state("recording", schedule_state_callback)
         prev_partial_text = None
 
 
@@ -533,10 +533,7 @@ def recognition_loop():
 
     start_overlay()
 
-    # Поднимаем нашу русскую восковую модель
     model = Model(str(MODEL_PATH))
-
-    # На основе этой модели поднимаем распознаватели речи
 
     recording_recognizer = KaldiRecognizer(model, SAMPLE_RATE)
 
@@ -547,15 +544,15 @@ def recognition_loop():
     # Теперь будем работать с микрофоном через модуль sounddevice (локально - sd).
     # Открываем сырой входящий поток звуковых данных.
     stream = init_audio_stream()
+    stream.start()
 
     # Входящий потом цифрового аудио инициализирован.
     # Сообщаем пользователю, что он уже может начинать говорить.
     print("recognition_loop. Начали слушать микрофон. Скажите одну из команд старта, чтобы начать диктовку.")
 
     recognizer = None
-
-    idle_recognizer_final = False
     is_final = False
+    old_recognizer = None
 
     # И садимся в мертвый цикл
     while True:
@@ -575,26 +572,17 @@ def recognition_loop():
         if recognizer != new_recognizer:
             print(f"recognition_loop. new_recognizer_name={new_recognizer_name}")
 
-            stream.stop()
-
-            try:
-                while True:
-                    q.get_nowait()
-            except queue.Empty:
-                pass
-
-            if recognizer:
-                recognizer.Reset()
+            # Если активный распознаватель еще не закончил работать, то
+            # он какое-то время доработает до завершения фразы,
+            # возможно, параллельно с новым
+            if recognizer and not is_final:
+                old_recognizer = recognizer
+                print(f"recognition_loop. old_recognizer is set")
 
             recognizer = new_recognizer
 
             if recognizer:
-                recognizer.Reset()
-                stream.start()
                 play_sound(new_recognizer_name)
-
-        if not recognizer:
-            continue
 
         # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
         try:
@@ -602,9 +590,22 @@ def recognition_loop():
         except queue.Empty:
             continue
 
-        is_final = recognizer.AcceptWaveform(data)
+        # print("recognition_loop. Got data")
 
-        idle_recognizer_final = recognizer == idle_recognizer and is_final
+        if old_recognizer:
+            print(f"recognition_loop. old_recognizer is set")
+            old_recognizer_is_final = old_recognizer.AcceptWaveform(data)
+            print(f"recognition_loop. old_recognizer_is_final={old_recognizer_is_final}")
+            if old_recognizer_is_final:
+                old_recognizer.Reset()
+                old_recognizer = None
+
+        if not recognizer:
+            continue
+
+        # print("recognition_loop. recognizer is chosen")
+
+        is_final = recognizer.AcceptWaveform(data)
 
         if is_final:
             full_result = json.loads(recognizer.Result())
@@ -612,6 +613,8 @@ def recognition_loop():
         else:
             partial_result = json.loads(recognizer.PartialResult())
             text = partial_result.get("partial", "")
+
+        # print(f"recognition_loop. text={text}")
 
         if text:
             if local_state == "idle":
