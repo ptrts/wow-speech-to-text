@@ -35,7 +35,7 @@ ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "кри�
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
 SEND_WORDS = {"отправить", "готово", "окей", "ок"}  # отправляют в чат
-CANCEL_WORDS = {"сброс", "отмена", "очистить", "кыш"}  # сбрасывают буфер
+CANCEL_WORDS = {"сброс", "отмена"}  # сбрасывают буфер
 
 # Задержки между нажатиями, чтобы игра точно всё проглотила
 KEY_DELAY = 0.05  # секунды
@@ -297,6 +297,10 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
     tokens = final_tokens.copy()
     tokens.extend(new_tokens)
+
+    if "очистить" in tokens:
+        final_tokens = []
+        tokens = []
 
     i = 0
     while i < len(tokens):
