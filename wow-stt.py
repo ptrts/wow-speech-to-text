@@ -185,10 +185,7 @@ def send_unicode_text(text: str, per_char_delay: float = 0.0):
 
 # ================== ОТПРАВКА В ЧАТ WoW ==================
 
-def send_clipboard_paste(text: str):
-    if not text:
-        return
-
+def clipboard_copy(text: str):
     # Пишем в буфер обмена Юникод-строку
     cb.OpenClipboard()
     try:
@@ -197,8 +194,41 @@ def send_clipboard_paste(text: str):
     finally:
         cb.CloseClipboard()
 
-    # Вставляем в активное окно
-    pyautogui.hotkey("ctrl", "v")
+
+# Виртуальные коды клавиш
+VK_RETURN = 0x0D
+VK_CONTROL = 0x11
+VK_V = 0x56
+
+
+def send_vk(vk: int, keyup: bool = False):
+    flags = KEYEVENTF_KEYUP if keyup else 0
+    inp = INPUT(
+        type=INPUT_KEYBOARD,
+        ki=KEYBDINPUT(
+            wVk=vk,
+            wScan=0,
+            dwFlags=flags,
+            time=0,
+            dwExtraInfo=0,
+        ),
+    )
+    user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+
+
+def press_enter():
+    send_vk(VK_RETURN, keyup=False)
+    send_vk(VK_RETURN, keyup=True)
+
+
+def press_ctrl_v():
+    # Ctrl down
+    send_vk(VK_CONTROL, keyup=False)
+    # V down/up
+    send_vk(VK_V, keyup=False)
+    send_vk(VK_V, keyup=True)
+    # Ctrl up
+    send_vk(VK_CONTROL, keyup=True)
 
 
 def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
@@ -214,15 +244,17 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     full_msg = f"{channel} {text}"
     logger.info("Отправляем: %r", full_msg)
 
+    clipboard_copy(full_msg)
+
     # Небольшая пауза, чтобы не перебивать предыдущее действие
-    time.sleep(0.1)
+    time.sleep(KEY_DELAY)
 
     # Открываем чат
     pyautogui.press("enter")
     time.sleep(KEY_DELAY)
 
     # Вставляем текст через буфер
-    send_clipboard_paste(full_msg)
+    press_ctrl_v()
     time.sleep(KEY_DELAY)
 
     # Отправляем
