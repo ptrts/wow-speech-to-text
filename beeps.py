@@ -1,6 +1,9 @@
 import threading
 import queue
 import winsound
+from app_logging import logging
+
+logger = logging.getLogger(__name__)
 
 # Очередь звуковых событий
 sound_queue = queue.Queue()
@@ -32,9 +35,9 @@ def play_sound_sync(event):
     if kind == "beep":
         freq, dur = params
         try:
-            print(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>> event={event}, kind={kind}, freq={freq}, freq={dur}")
+            logger.debug(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>> event={event}, kind={kind}, freq={freq}, freq={dur}")
             winsound.Beep(freq, dur)
-            print(f"<<<<<<<<<<<<<<<<<<<<<<<<<<<<< event={event}, kind={kind}, freq={freq}, freq={dur}")
+            logger.debug(f"<<<<<<<<<<<<<<<<<<<<<<<<<<<<< event={event}, kind={kind}, freq={freq}, freq={dur}")
         except RuntimeError:
             # например, если нет звукового устройства
             pass

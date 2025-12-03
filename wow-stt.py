@@ -216,7 +216,7 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
 # ================== ОБРАБОТКА РАСПОЗНАННЫХ ФРАЗ ==================
 
 def to_idle():
-    logger.info("start")
+    logger.debug("start")
 
     def schedule_state_callback():
         global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
@@ -299,19 +299,19 @@ def refresh_final_text_preview(new_tokens: list[str]):
     i = 0
     while i < len(tokens):
         token = tokens[i]
-        logger.info("i=%s, token=%s", i, token)
+        logger.debug("i=%s, token=%s", i, token)
         if token == "удалить":
             if i > 0:
 
                 # Идем назад, ищем не пробел
                 j = i - 1
                 while j >= 0:
-                    logger.info("j=%s, tokens[j]=%s", j, tokens[j])
+                    logger.debug("j=%s, tokens[j]=%s", j, tokens[j])
                     if tokens[j] != "пробел":
-                        logger.info("From here!")
+                        logger.debug("From here!")
                         break
                     j -= 1
-                logger.info("j=%s, tokens[j: i + 1]=%s", j, tokens[j: i + 1])
+                logger.debug("j=%s, tokens[j: i + 1]=%s", j, tokens[j: i + 1])
 
                 # Удаляем этот не пробел, текущий токен, и все пробелы между ними.
                 tokens[j: i + 1] = []
@@ -324,7 +324,7 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
     tokens = replace_russian_numbers(tokens)
 
-    logger.info("final_tokens=%s, new_tokens=%s, tokens=%s", final_tokens, new_tokens, tokens)
+    logger.debug("final_tokens=%s, new_tokens=%s, tokens=%s", final_tokens, new_tokens, tokens)
 
     open_quote = False
     prev_token_category: str | None = None
@@ -333,7 +333,7 @@ def refresh_final_text_preview(new_tokens: list[str]):
     i = 0
     while i < len(tokens):
         token = tokens[i]
-        logger.info("i=%s, token=%s", i, token)
+        logger.debug("i=%s, token=%s", i, token)
 
         is_word = True
         command = None
@@ -341,13 +341,13 @@ def refresh_final_text_preview(new_tokens: list[str]):
             words = word_combination_and_command.word_combination.words
             command = word_combination_and_command.command
 
-            logger.info("i=%s, command.code=%s, words=%s", i, command.code, words)
+            logger.debug("i=%s, command.code=%s, words=%s", i, command.code, words)
 
             if tokens[i: i + len(words)] == words:
                 is_word = False
                 token = command.code
                 tokens[i: i + len(words)] = [token]
-                logger.info("i=%s, word combination match, tokens=%s", i, tokens)
+                logger.debug("i=%s, word combination match, tokens=%s", i, tokens)
                 break
             else:
                 command = None
@@ -356,10 +356,10 @@ def refresh_final_text_preview(new_tokens: list[str]):
             open_quote = not open_quote
             if open_quote:
                 token = tokens[i] = "ОТКРЫВАЮЩИЕ_КАВЫЧКИ"
-                logger.info("Данные кавычки - открывающие, token=%s", token)
+                logger.debug("Данные кавычки - открывающие, token=%s", token)
             else:
                 token = tokens[i] = "ЗАКРЫВАЮЩИЕ_КАВЫЧКИ"
-                logger.info("Данные кавычки - закрывающие, token=%s", token)
+                logger.debug("Данные кавычки - закрывающие, token=%s", token)
 
         if is_word:
             token_category = "СЛОВО"
@@ -378,9 +378,9 @@ def refresh_final_text_preview(new_tokens: list[str]):
         else:
             token_category = None
 
-        logger.info("token_category=%s", token_category)
+        logger.debug("token_category=%s", token_category)
 
-        logger.info("new_sentence=%s", new_sentence)
+        logger.debug("new_sentence=%s", new_sentence)
 
         if token_category == "КОНЕЦ_ПРЕДЛОЖЕНИЯ":
             new_sentence = True
@@ -388,7 +388,7 @@ def refresh_final_text_preview(new_tokens: list[str]):
             token = tokens[i] = token.capitalize()
             new_sentence = False
 
-        logger.info("new_sentence=%s, token=%s", new_sentence, token)
+        logger.debug("new_sentence=%s, token=%s", new_sentence, token)
 
         if command:
             if command.substitute:
@@ -397,7 +397,7 @@ def refresh_final_text_preview(new_tokens: list[str]):
                 token = None
                 tokens[i: i + 1] = []
                 i -= 1
-            logger.info("token=%s, tokens=%s", token, tokens)
+            logger.debug("token=%s, tokens=%s", token, tokens)
 
         need_space = False
         if prev_token_category == "СЛОВО" and token_category == "СЛОВО":
@@ -419,13 +419,13 @@ def refresh_final_text_preview(new_tokens: list[str]):
         elif prev_token_category != "ПРОБЕЛ" and token_category == "ТИРЕ":
             need_space = True
 
-        logger.info("prev_token_category=%s, token_category=%s, need_space=%s", prev_token_category, token_category, need_space)
+        logger.debug("prev_token_category=%s, token_category=%s, need_space=%s", prev_token_category, token_category, need_space)
 
         # Заменяем текущий токен на его представление
 
         if need_space:
             tokens[i: i+1] = [" ", token]
-            logger.info("Добавили пробел. tokens=%s", tokens)
+            logger.debug("Добавили пробел. tokens=%s", tokens)
             i += 1
 
         prev_token_category = token_category
@@ -436,11 +436,11 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
     show_text(f"{chat_channel} {final_text_preview}")
 
-    logger.info(">>>")
-    logger.info(">>>")
-    logger.info(final_text_preview)
-    logger.info(">>>")
-    logger.info(">>>")
+    logger.debug(">>>")
+    logger.debug(">>>")
+    logger.debug(final_text_preview)
+    logger.debug(">>>")
+    logger.debug(">>>")
 
 
 def handle_text(partial_text: str, is_final: bool):
@@ -451,7 +451,7 @@ def handle_text(partial_text: str, is_final: bool):
         return
 
     if prev_partial_text is not None and partial_text == prev_partial_text and not is_final:
-        logger.info("Same partial")
+        logger.debug("Same partial")
         return
 
     logger.info("partial_text=%s, is_final=%s", partial_text, is_final)
@@ -461,7 +461,7 @@ def handle_text(partial_text: str, is_final: bool):
     # Разбиваем текст частичного результата на слова
     tokens = partial_text.split()
     # Печатаем, какие слова там получились
-    logger.info("tokens=%s, state=%r", tokens, state)
+    logger.debug("tokens=%s, state=%r", tokens, state)
 
     stop_commands = SEND_WORDS | CANCEL_WORDS
     stop_command_position, stop_command = next(
@@ -473,7 +473,7 @@ def handle_text(partial_text: str, is_final: bool):
     )
 
     if stop_command is None:
-        logger.info("Нет стоп команды")
+        logger.debug("Нет стоп команды")
         if is_final:
             final_tokens.extend(tokens)
             logger.info("Фраза финальная. Сохранили tokens=%s в final_tokens=%s, chat_channel=%s", tokens, final_tokens, chat_channel)
@@ -483,17 +483,17 @@ def handle_text(partial_text: str, is_final: bool):
         tokens = tokens[0: stop_command_position]
         refresh_final_text_preview(tokens)
         if final_text_preview:
-            logger.info("Вызываем отправку в чат")
+            logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
             send_to_wow_chat(chat_channel, final_text_preview, let_edit=(stop_command == "дописать"))
             play_sound("sending_complete")
         else:
             play_sound("sending_error")
-            logger.info("Пытались отправить, но буфер пуст")
+            logger.debug("Пытались отправить, но буфер пуст")
         to_idle()
 
     elif stop_command in CANCEL_WORDS:
-        logger.info("Сброс")
+        logger.debug("Сброс")
         play_sound("editing_cancelled")
         to_idle()
 
@@ -504,7 +504,7 @@ def on_schedule_state_timer(new_state, callback):
     state = new_state
     if callback:
         callback()
-    logger.info("%s => %s", old_state, state)
+    logger.debug("%s => %s", old_state, state)
 
 
 def set_state(new_state, callback=None):
@@ -521,7 +521,7 @@ def handle_text_idle(partial_text: str):
         return
 
     if prev_partial_text is not None and partial_text == prev_partial_text:
-        logger.info("Same partial")
+        logger.debug("Same partial")
         return
 
     prev_partial_text = partial_text
@@ -549,7 +549,7 @@ def handle_text_idle(partial_text: str):
 def audio_callback(indata, frames, time_info, status):
     # Сообщаем статус аудио устройства, если нужно
     if status:
-        logger.info("status=%s", status)
+        logger.debug("status=%s", status)
 
     # Достаем байты из indata. Кладем эти байты в очередь, на которой у нас сидит vosk
     q.put(bytes(indata))
@@ -597,14 +597,14 @@ def recognition_loop():
             new_recognizer = None
 
         if recognizer != new_recognizer:
-            logger.info("new_recognizer_name=%s", new_recognizer_name)
+            logger.debug("new_recognizer_name=%s", new_recognizer_name)
 
             # Если активный распознаватель еще не закончил работать, то
             # он какое-то время доработает до завершения фразы,
             # возможно, параллельно с новым
             if recognizer and not is_final:
                 old_recognizer = recognizer
-                logger.info("old_recognizer is set")
+                logger.debug("old_recognizer is set")
 
             recognizer = new_recognizer
 
@@ -620,9 +620,9 @@ def recognition_loop():
         logger.log(TRACE, "Got data")
 
         if old_recognizer:
-            logger.info("old_recognizer is set")
+            logger.debug("old_recognizer is set")
             old_recognizer_is_final = old_recognizer.AcceptWaveform(data)
-            logger.info("old_recognizer_is_final=%s", old_recognizer_is_final)
+            logger.debug("old_recognizer_is_final=%s", old_recognizer_is_final)
             if old_recognizer_is_final:
                 old_recognizer.Reset()
                 old_recognizer = None
