@@ -358,20 +358,20 @@ def refresh_final_text_preview(new_tokens: list[str]):
             else:
                 command = None
 
-        if token == "КАВЫЧКА":
+        if token == "КАВЫЧКИ":
             open_quote = not open_quote
             if open_quote:
-                token = tokens[i] = "ОТКРЫВАЮЩАЯ_КАВЫЧКА"
-                print(f"refresh_final_text_preview. Данная кавычка - открывающая, token={token}")
+                token = tokens[i] = "ОТКРЫВАЮЩИЕ_КАВЫЧКИ"
+                print(f"refresh_final_text_preview. Данные кавычки - открывающие, token={token}")
             else:
-                token = tokens[i] = "ЗАКРЫВАЮЩАЯ_КАВЫЧКА"
-                print(f"refresh_final_text_preview. Данная кавычка - закрывающая, token={token}")
+                token = tokens[i] = "ЗАКРЫВАЮЩИЕ_КАВЫЧКИ"
+                print(f"refresh_final_text_preview. Данные кавычки - закрывающие, token={token}")
 
         if is_word:
             token_category = "СЛОВО"
-        elif token in ["ОТКРЫВАЮЩАЯ_КАВЫЧКА", "ОТКРЫВАЮЩАЯ_СКОБКА"]:
+        elif token in ["ОТКРЫВАЮЩИЕ_КАВЫЧКИ", "ОТКРЫВАЮЩАЯ_СКОБКА"]:
             token_category = "ОТКРЫВАТЕЛЬ"
-        elif token in ["ЗАКРЫВАЮЩАЯ_КАВЫЧКА", "ЗАКРЫВАЮЩАЯ_СКОБКА"]:
+        elif token in ["ЗАКРЫВАЮЩИЕ_КАВЫЧКИ", "ЗАКРЫВАЮЩАЯ_СКОБКА"]:
             token_category = "ЗАКРЫВАТЕЛЬ"
         elif token in ["ТОЧКА", "ВОСКЛИЦАТЕЛЬНЫЙ_ЗНАК", "ВОПРОСИТЕЛЬНЫЙ_ЗНАК"]:
             token_category = "КОНЕЦ_ПРЕДЛОЖЕНИЯ"
