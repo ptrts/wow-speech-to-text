@@ -286,7 +286,7 @@ TextModificationCommand("?", "вопросительный знак")
 # Команды
 TextModificationCommand("", "большая буква")
 TextModificationCommand("", "маленькая буква")
-TextModificationCommand("", "удалить слово")
+TextModificationCommand("", "удалить")
 
 word_combination_and_text_modification_commands.sort(key=lambda it: len(it.word_combination.words), reverse=True)
 
@@ -296,6 +296,32 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
     tokens = final_tokens.copy()
     tokens.extend(new_tokens)
+
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        print(f"refresh_final_text_preview. i={i}, token={token}")
+        if token == "удалить":
+            if i > 0:
+
+                # Идем назад, ищем не пробел
+                j = i - 1
+                while j >= 0:
+                    print(f"refresh_final_text_preview. j={j}, tokens[j]={tokens[j]}")
+                    if tokens[j] != "пробел":
+                        print(f"refresh_final_text_preview. From here!")
+                        break
+                    j -= 1
+                print(f"refresh_final_text_preview. j={j}, tokens[j: i + 1]={tokens[j: i + 1]}")
+
+                # Удаляем этот не пробел, текущий токен, и все пробелы между ними.
+                tokens[j: i + 1] = []
+                i = j
+            else:
+                tokens[i: i + 1] = []
+                i = 0
+        else:
+            i += 1
 
     print(f"refresh_final_text_preview. final_tokens={final_tokens}, new_tokens={new_tokens}, tokens={tokens}")
 
