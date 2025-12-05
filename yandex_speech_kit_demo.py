@@ -30,6 +30,8 @@ AUTH_URL = "https://oauth.yandex.ru/authorize"
 TOKEN_URL = "https://oauth.yandex.com/token"
 IAM_URL = "https://iam.api.cloud.yandex.net/iam/v1/tokens"
 
+FOLDER_ID = "b1gq2ols8cpvtgum2j63"
+
 # Настройки потокового распознавания.
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -381,6 +383,7 @@ def recognize_from_microphone(secret):
 
             # Параметры для аутентификации с IAM-токеном
             ('authorization', f'Bearer {secret}'),
+            ('x-folder-id', FOLDER_ID),
         )
     )
 
@@ -414,8 +417,12 @@ def recognize_from_microphone(secret):
 
 
 if __name__ == "__main__":
+
     tokens = get_oauth_and_iam_tokens()
+
     print("Итог:")
     for k, v in tokens.items():
         print(f"{k}: {v}")
-    recognize_from_microphone(tokens["iam_token"])
+
+    iam_token = tokens["iam_token"]
+    recognize_from_microphone(iam_token)
