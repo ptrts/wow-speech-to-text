@@ -8,8 +8,8 @@ import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 # Настройки потокового распознавания.
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 8000
-CHUNK = 4096
+SAMPLES_PER_SECOND = 8000
+SAMPLES_PER_BLOCK = 4096
 RECORD_SECONDS = 30
 WAVE_OUTPUT_FILENAME = "audio.wav"
 
@@ -17,7 +17,7 @@ audio = pyaudio.PyAudio()
 
 
 def gen():
-    # Задайте настройки распознавания.
+    # Из объектов модели конфигурации распознания нашего gRPC API создаем конфигурацию.
     recognize_options = stt_pb2.StreamingOptions(
         recognition_model=stt_pb2.RecognitionModelOptions(
             audio_format=stt_pb2.AudioFormatOptions(
@@ -40,62 +40,120 @@ def gen():
         )
     )
 
-    # Отправьте сообщение с настройками распознавания.
+    # Отправляем на сервер собранные нами настройки распознавания.
     yield stt_pb2.StreamingRequest(session_options=recognize_options)
 
-    # Начните запись голоса.
-    stream = audio.open(format=FORMAT, channels=CHANNELS,
-                        rate=RATE, input=True,
-                        frames_per_buffer=CHUNK)
-    print("recording")
-    frames = []
+    # При помощи PyAudio открываем поток аудио данных с микрофона.
+    stream = audio.open(
+        format=FORMAT,
+        channels=CHANNELS,
+        rate=SAMPLES_PER_SECOND,
+        input=True,
+        frames_per_buffer=SAMPLES_PER_BLOCK
+    )
 
-    # Распознайте речь по порциям.
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-        data = stream.read(CHUNK)
+    print("recording")
+
+    # Список блоков, отправленных на распознание, чтобы их сохранить в .wav файл
+    wav_file_blocks = []
+
+    # Выясняем, сколько блоков мы планируем записать.
+    blocks_per_second = SAMPLES_PER_SECOND / SAMPLES_PER_BLOCK
+    blocks_to_record = blocks_per_second * RECORD_SECONDS
+
+    # Делаем цикл по количеству блоков.
+    for i in range(0, int(blocks_to_record)):
+
+        # Читаем из микрофона очередной блок.
+        data = stream.read(SAMPLES_PER_BLOCK)
+
+        # Отправляем считанный из микрофона блок на распознание.
         yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=data))
-        frames.append(data)
+
+        # Сохраняем отправленный на распознание блок к себе в список.
+        wav_file_blocks.append(data)
+
     print("finished")
 
-    # Остановите запись.
+    # Закрываем поток аудио данных
     stream.stop_stream()
     stream.close()
+
+    # Закрываем PyAudio
     audio.terminate()
 
-    # Создайте файл WAV с записанным голосом.
-    waveFile = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
-    waveFile.setnchannels(CHANNELS)
-    waveFile.setsampwidth(audio.get_sample_size(FORMAT))
-    waveFile.setframerate(RATE)
-    waveFile.writeframes(b''.join(frames))
-    waveFile.close()
+    # Данные, которые мы сняли с микрофона и отправили на распознание, мы почему-то записываем в .wav файл
+    wave_file = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
+    wave_file.setnchannels(CHANNELS)
+    wave_file.setsampwidth(audio.get_sample_size(FORMAT))
+    wave_file.setframerate(SAMPLES_PER_SECOND)
+    wave_file.writeframes(b''.join(wav_file_blocks))
+    wave_file.close()
 
 
 def run(secret):
+
     # Установите соединение с сервером.
+
+    # Создаем дефолтный объект кредов для соединения.
     cred = grpc.ssl_channel_credentials()
+
+    # С этими кредами создаем соединение с TLS эндпойнтом нужного нам gRPC API
     channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
-    stub = stt_service_pb2_grpc.RecognizerStub(channel)
+
+    # В рамках установленного соединения
+    # получаем
+    # прокси-имплементацию для общения по интерфейсу RecognizerStub из файла stt_service_pb2_grpc.
+    # Это у нас интерфейс какого-то распознавателя.
+    recognizer = stt_service_pb2_grpc.RecognizerStub(channel)
 
     # Отправьте данные для распознавания.
-    it = stub.RecognizeStreaming(gen(), metadata=(
-        # Параметры для аутентификации с API-ключом от имени сервисного аккаунта
-        # ('authorization', f'Api-Key {secret}'),
-        # Параметры для аутентификации с IAM-токеном
-        ('authorization', f'Bearer {secret}'),
-    ))
+    # Это функция типа stream_stream. Она принимает генератор и сама возвращает некий итерируемый ответ.
+    # Вот тут мы получаем итератор it по результатам распознания.
+    it = recognizer.RecognizeStreaming(
+
+        # Снять с микрофона нужное количество блоков на заданное количество секунд.
+        # Отправить эти блоки на распознание.
+        # Сохранить отправленные бинарные данные в .wav файл.
+        # Это функция-генератор, т.к. там внутри используется yield.
+        # Что-то вроде флоу в котлине.
+        gen(),
+
+        # Для установки соединения использовать такие заголовки.
+        metadata=(
+
+            # Параметры для аутентификации с API-ключом от имени сервисного аккаунта
+            # ('authorization', f'Api-Key {secret}'),
+
+            # Параметры для аутентификации с IAM-токеном
+            ('authorization', f'Bearer {secret}'),
+        )
+    )
 
     # Обработайте ответы сервера и выведите результат в консоль.
     try:
-        for r in it:
-            event_type, alternatives = r.WhichOneof('Event'), None
-            if event_type == 'partial' and len(r.partial.alternatives) > 0:
-                alternatives = [a.text for a in r.partial.alternatives]
+        # Идем по итератору результатов распознания.
+        for streaming_response in it:
+
+            # Будем собирать вот такой список каких-то там альтернатив.
+            alternatives = None
+
+            # Получаем имя того поля группы Event внутри StreamingResponse,
+            # которое (поле) присутствует в StreamingResponse.
+            # В каждом из этих полей содержится объект какого-то своего класса и какой-то своей структуры.
+            event_type = streaming_response.WhichOneof('Event')
+            # Делаем разное, в зависимости от того, какое из этих полей там было задано.
+            # Достаем список альтернативных слов из соответствующего объекта.
+            if event_type == 'partial' and len(streaming_response.partial.alternatives) > 0:
+                alternatives = [a.text for a in streaming_response.partial.alternatives]
             if event_type == 'final':
-                alternatives = [a.text for a in r.final.alternatives]
+                alternatives = [a.text for a in streaming_response.final.alternatives]
             if event_type == 'final_refinement':
-                alternatives = [a.text for a in r.final_refinement.normalized_text.alternatives]
+                alternatives = [a.text for a in streaming_response.final_refinement.normalized_text.alternatives]
+
+            # Выводим список альтернатив в лог.
             print(f'type={event_type}, alternatives={alternatives}')
+
     except grpc._channel._Rendezvous as err:
         print(f'Error code {err._state.code}, message: {err._state.details}')
         raise err
