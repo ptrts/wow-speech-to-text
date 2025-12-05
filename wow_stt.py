@@ -16,6 +16,8 @@ from overlay import start_overlay, show_text, clear_text
 from beeps import play_sound
 from russian_numerals import replace_russian_numbers
 from layout_switch import switch_to_russian
+from yandex_speech_kit_oauth import get_oauth_and_iam_tokens
+from yandex_speech_kit_demo import recognize_from_microphone
 from app_logging import logging, TRACE
 
 
@@ -607,20 +609,12 @@ def audio_callback(indata, frames, time_info, status):
     q.put(bytes(indata))
 
 
-def recognition_loop():
+def idle_recognition_loop():
     global state
 
     start_overlay()
 
-    recording_model = Model(str(RECORDING_MODEL_PATH))
-
-    def get_recording_recognizer():
-        return KaldiRecognizer(recording_model, SAMPLE_RATE)
-
-    if IDLE_MODEL_PATH == RECORDING_MODEL_PATH:
-        idle_model = recording_model
-    else:
-        idle_model = Model(str(IDLE_MODEL_PATH))
+    idle_model = Model(str(IDLE_MODEL_PATH))
     grammar = json.dumps(list(ACTIVATE_WORDS) + ["[unk]"], ensure_ascii=False)
 
     def get_idle_recognizer():
@@ -637,8 +631,6 @@ def recognition_loop():
     logger.info("Начали слушать микрофон. Скажите одну из команд старта, чтобы начать диктовку.")
 
     recognizer = None
-    is_final = False
-    old_recognizer = None
 
     local_state: str | None = None
 
@@ -649,21 +641,12 @@ def recognition_loop():
 
             logger.debug("local_state=%s", local_state)
 
-            # Если активный распознаватель еще не закончил работать, то
-            # он какое-то время доработает до завершения фразы,
-            # возможно, параллельно с новым
-            if recognizer and not is_final:
-                old_recognizer = recognizer
-                logger.debug("old_recognizer is set")
-
             if local_state == "idle":
                 recognizer = get_idle_recognizer()
-            elif local_state == "recording":
-                recognizer = get_recording_recognizer()
             else:
                 recognizer = None
 
-            if recognizer:
+            if state == "idle":
                 play_sound(local_state)
 
         # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
@@ -674,14 +657,6 @@ def recognition_loop():
 
         logger.log(TRACE, "Got data")
 
-        if old_recognizer:
-            logger.debug("old_recognizer is set")
-            old_recognizer_is_final = old_recognizer.AcceptWaveform(data)
-            logger.debug("old_recognizer_is_final=%s", old_recognizer_is_final)
-            if old_recognizer_is_final:
-                old_recognizer.Reset()
-                old_recognizer = None
-
         if not recognizer:
             continue
 
@@ -689,22 +664,23 @@ def recognition_loop():
 
         is_final = recognizer.AcceptWaveform(data)
 
-        if is_final:
-            full_result = json.loads(recognizer.Result())
-            text = full_result.get("text", "")
-        else:
-            partial_result = json.loads(recognizer.PartialResult())
-            text = partial_result.get("partial", "")
-
-        logger.log(TRACE, "text=%s", text)
-
-        if text:
-            if local_state == "idle":
-                # if is_final:
-                #     handle_text_idle(text)
-                handle_text_idle(text)
+        if state == "idle":
+            if is_final:
+                full_result = json.loads(recognizer.Result())
+                text = full_result.get("text", "")
             else:
-                handle_text(text, is_final)
+                partial_result = json.loads(recognizer.PartialResult())
+                text = partial_result.get("partial", "")
+
+            logger.log(TRACE, "text=%s", text)
+
+            if text:
+                handle_text_idle(text)
+        else:
+            logger.debug("idle recognizer finishes its work. is_final=%s", is_final)
+            if is_final:
+                recognizer.Reset()
+                recognizer = None
 
 
 def init_audio_stream():
@@ -718,8 +694,17 @@ def init_audio_stream():
 
 
 if __name__ == "__main__":
+    tokens = get_oauth_and_iam_tokens()
+
+    print("Итог:")
+    for k, v in tokens.items():
+        print(f"{k}: {v}")
+
+    iam_token = tokens["iam_token"]
+    recognize_from_microphone(iam_token)
+
     try:
-        recognition_loop()
+        idle_recognition_loop()
     except KeyboardInterrupt:
         logger.info("")
         logger.info("[MAIN] Остановлено пользователем")
