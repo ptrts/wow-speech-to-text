@@ -18,3 +18,16 @@ pip install setuptools vosk sounddevice pyautogui pyperclip pywin32 rus2num
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 rem pip install -U openai-whisper sounddevice numpy
 pip install faster-whisper sounddevice numpy
+pip install grpcio-tools PyAudio
+
+python -m grpc_tools.protoc -I yandex-cloud-cloudapi -I yandex-cloud-cloudapi/third_party/googleapis ^
+   --python_out=. ^
+   --grpc_python_out=. ^
+     google/api/http.proto ^
+     google/api/annotations.proto ^
+     yandex/cloud/api/operation.proto ^
+     google/rpc/status.proto ^
+     yandex/cloud/operation/operation.proto ^
+     yandex/cloud/validation.proto ^
+     yandex/cloud/ai/stt/v3/stt_service.proto ^
+     yandex/cloud/ai/stt/v3/stt.proto

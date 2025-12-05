@@ -12,6 +12,7 @@ import base64
 import hashlib
 from typing import Any, Dict
 import requests
+from yandex_speech_kit_demo import run_yandex_speech_kit_demo
 
 PORT = 52123
 CALLBACK_PATH = "/oauth/callback"
@@ -259,3 +260,4 @@ if __name__ == "__main__":
     print("Итог:")
     for k, v in tokens.items():
         print(f"{k}: {v}")
+    run_yandex_speech_kit_demo(tokens["iam_token"])
