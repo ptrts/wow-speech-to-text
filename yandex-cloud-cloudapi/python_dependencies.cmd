@@ -7,8 +7,8 @@ pip install --upgrade pip
 pip install grpcio-tools PyAudio
 
 python -m grpc_tools.protoc -I cloudapi -I cloudapi/third_party/googleapis ^
-   --python_out=output ^
-   --grpc_python_out=output ^
+   --python_out=. ^
+   --grpc_python_out=. ^
      google/api/http.proto ^
      google/api/annotations.proto ^
      yandex/cloud/api/operation.proto ^
