@@ -13,8 +13,8 @@ rem 	(.venv310) D:\projects\wow-speech-to-text>
 .\.venv310\Scripts\activate
 
 rem В ТОЙ КОМАНДНОЙ СТРОКЕ ^^, выполняем следующие команды для настройки окружения:
-python -m pip install --upgrade pip
-python -m pip install setuptools vosk sounddevice pyautogui pyperclip pywin32 rus2num
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install --upgrade pip
+pip install setuptools vosk sounddevice pyautogui pyperclip pywin32 rus2num
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 rem pip install -U openai-whisper sounddevice numpy
 pip install faster-whisper sounddevice numpy
