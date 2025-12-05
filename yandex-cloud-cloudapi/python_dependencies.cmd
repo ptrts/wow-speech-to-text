@@ -1,13 +1,12 @@
+cd yandex-cloud-cloudapi
+
 "D:\Program Files\Python310\python.exe" -m venv .venv
 .\.venv\Scripts\activate
 
 pip install --upgrade pip
 pip install grpcio-tools PyAudio
 
-cd yandex-cloud-cloudapi
-mkdir output
-
-python -m grpc_tools.protoc -I . -I third_party/googleapis ^
+python -m grpc_tools.protoc -I cloudapi -I cloudapi/third_party/googleapis ^
    --python_out=output ^
    --grpc_python_out=output ^
      google/api/http.proto ^
