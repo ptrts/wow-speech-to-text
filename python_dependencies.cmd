@@ -5,12 +5,12 @@ rem 	Инсталлятор: https://www.python.org/ftp/python/3.10.11/python-3.
 rem Заходим в каталог проекта
 
 rem При помощи поставленного Python310, ставим виртуальное окружение этого Python310
-"D:\Program Files\Python310\python.exe" -m venv .venv310
+"D:\Program Files\Python310\python.exe" -m venv .venv
 
 rem Активируем окружение.
 rem Должно показать командную строку, типа такой:
-rem 	(.venv310) D:\projects\wow-speech-to-text>
-.\.venv310\Scripts\activate
+rem 	(.venv) D:\projects\wow-speech-to-text>
+.\.venv\Scripts\activate
 
 rem В ТОЙ КОМАНДНОЙ СТРОКЕ ^^, выполняем следующие команды для настройки окружения:
 pip install --upgrade pip

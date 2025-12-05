@@ -1,2 +1,2 @@
-".\.venv310\Scripts\python.exe" whisper_demo.py
+".\.venv\Scripts\python.exe" whisper_demo.py
 pause

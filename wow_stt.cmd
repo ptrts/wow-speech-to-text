@@ -1,2 +1,2 @@
-".\.venv310\Scripts\python.exe" wow_stt.py
+".\.venv\Scripts\python.exe" wow_stt.py
 pause
