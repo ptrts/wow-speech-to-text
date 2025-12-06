@@ -12,7 +12,10 @@ import base64
 import hashlib
 from typing import Any, Dict
 import requests
+from app_logging import logging, TRACE
 
+
+logger = logging.getLogger(__name__)
 
 PORT = 52123
 CALLBACK_PATH = "/oauth/callback"
@@ -38,8 +41,8 @@ class OAuth:
     def launch(self):
         auth_url = OAuth._build_auth_url(CLIENT_ID, REDIRECT_URI, SCOPE, self.state, self.code_challenge)
 
-        print("Открываю браузер по адресу:")
-        print(auth_url)
+        logger.info("Открываю браузер по адресу:")
+        logger.info(auth_url)
         webbrowser.open_new_tab(auth_url)
 
     @staticmethod
@@ -105,12 +108,12 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
             return
 
         # Выводим в лог поступивший запрос
-        print("===== RAW HTTP REQUEST =====")
-        print(self.requestline)
-        print()
+        logger.info("===== RAW HTTP REQUEST =====")
+        logger.info(self.requestline)
+        logger.info("")
         raw_headers = self.headers.as_bytes().decode("iso-8859-1", errors="replace")
-        print(raw_headers.rstrip("\r\n"))
-        print()
+        logger.info(raw_headers.rstrip("\r\n"))
+        logger.info("")
 
         params = urllib.parse.parse_qs(parsed.query)
         code = params.get("code", [None])[0]
@@ -158,7 +161,7 @@ def launch_server(state: str):
 
 
 def wait_for_oauth_callback(httpd: OAuthTCPServer, timeout: float):
-    print(f"Жду редиректа на http://127.0.0.1:{PORT}{CALLBACK_PATH} ...")
+    logger.info(f"Жду редиректа на http://127.0.0.1:%s%s ...", PORT, CALLBACK_PATH)
 
     started = time.time()
     while True:
@@ -181,7 +184,7 @@ def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
         oauth.launch()
         cb = wait_for_oauth_callback(httpd, timeout)
 
-    print("Callback:", cb)
+    logger.info("Callback: %s", cb)
     # cb ожидается вида:
     # {
     #   "code": str | None,
@@ -200,7 +203,7 @@ def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
     if not code:
         raise RuntimeError("В callback нет параметра 'code'")
 
-    print("Обмениваю code на OAuth-токен...")
+    logger.info("Обмениваю code на OAuth-токен...")
     token_data = {
         "grant_type": "authorization_code",
         "code": code,
@@ -229,9 +232,9 @@ def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
     oauth_refresh_token = tj.get("refresh_token")
     oauth_expires_in = tj.get("expires_in")
 
-    print("OAuth-токен получен.")
+    logger.info("OAuth-токен получен.")
 
-    print("Обмениваю OAuth-токен на IAM-токен...")
+    logger.info("Обмениваю OAuth-токен на IAM-токен...")
     iam_resp = requests.post(
         IAM_URL,
         json={"yandexPassportOauthToken": oauth_access_token},
@@ -244,7 +247,7 @@ def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
     iam_token = ij["iamToken"]
     iam_expires_at = ij.get("expiresAt")
 
-    print("IAM-токен получен.")
+    logger.info("IAM-токен получен.")
 
     return {
         "oauth_access_token": oauth_access_token,
@@ -253,15 +256,3 @@ def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
         "iam_token": iam_token,
         "iam_expires_at": iam_expires_at,
     }
-
-
-if __name__ == "__main__":
-
-    tokens = get_oauth_and_iam_tokens()
-
-    print("Итог:")
-    for k, v in tokens.items():
-        print(f"{k}: {v}")
-
-    iam_token = tokens["iam_token"]
-    recognize_from_microphone(iam_token)

@@ -5,7 +5,10 @@ import pyaudio
 import grpc
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
+from app_logging import logging, TRACE
 
+
+logger = logging.getLogger(__name__)
 
 # todo Вынести из проекта или получать по Yandex Cloud API
 FOLDER_ID = "b1gq2ols8cpvtgum2j63"
@@ -88,7 +91,7 @@ def recognize_requests_generator():
             frames_per_buffer=SAMPLES_PER_BLOCK
         )
 
-        print("recording")
+        logger.info("recording")
 
         while True:
             # Читаем из микрофона очередной блок.
@@ -150,21 +153,12 @@ def recognize_from_microphone(callback: RecognizedFragmentCallback):
             # Делаем разное, в зависимости от того, какое из этих полей там было задано.
             # Достаем список альтернативных слов из соответствующего объекта.
             if event_type == 'partial' and len(streaming_response.partial.alternatives) > 0:
-                callback(
-                    [a.text for a in streaming_response.partial.alternatives],
-                    False
-                )
+                alternatives = [a.text for a in streaming_response.partial.alternatives]
+                callback(alternatives, False)
             if event_type == 'final':
-                callback(
-                    [a.text for a in streaming_response.final.alternatives],
-                    True
-                )
-            if event_type == 'final_refinement':
-                alternatives = [a.text for a in streaming_response.final_refinement.normalized_text.alternatives]
-
-            # Выводим список альтернатив в лог.
-            print(f'type={event_type}, alternatives={alternatives}')
+                alternatives = [a.text for a in streaming_response.final.alternatives]
+                callback(alternatives, True)
 
     except grpc._channel._Rendezvous as err:
-        print(f'Error code {err._state.code}, message: {err._state.details}')
+        logger.error("Error code %s, message: %s", err._state.code, err._state.details)
         raise err

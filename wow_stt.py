@@ -567,13 +567,13 @@ def set_state(new_state, callback=None):
     threading.Timer(0.2, on_schedule_state_timer, args=(new_state, callback)).start()
 
 
-def recognized_fragment_callback(alternatives: list[str], is_final: bool):
-    # handle_text(alternatives[0], is_final)
+def on_recognized_fragment(alternatives: list[str], is_final: bool):
+    handle_text(alternatives[0], is_final)
     pass
 
 
 def recognize_thread():
-    recognize_from_microphone(recognized_fragment_callback)
+    recognize_from_microphone(on_recognized_fragment)
 
 
 def on_recording():
@@ -706,9 +706,9 @@ def init_audio_stream():
 if __name__ == "__main__":
     security_tokens = get_oauth_and_iam_tokens()
 
-    print("Итог:")
+    logger.info("Итог:")
     for k, v in security_tokens.items():
-        print(f"{k}: {v}")
+        logger.info(f"{k}: {v}")
 
     iam_token = security_tokens["iam_token"]
     yandex_speech_kit_init(iam_token)
