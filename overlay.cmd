@@ -1,2 +1,0 @@
-py overlay.py
-pause
