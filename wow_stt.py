@@ -58,6 +58,8 @@ prev_partial_text: str | None = None
 chat_channel: str | None = None
 final_tokens: list[str] = []
 final_text_preview: str | None = None
+recognize_thread: threading.Thread | None = None
+recognize_thread_stop_event: threading.Event | None = None
 q = queue.Queue()  # очередь аудио-данных
 
 # ================== Структуры и константы для SendInput ===
@@ -268,20 +270,6 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
 
 
 # ================== ОБРАБОТКА РАСПОЗНАННЫХ ФРАЗ ==================
-
-def to_idle():
-    logger.debug("start")
-
-    def schedule_state_callback():
-        global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
-        final_tokens = []
-        chat_channel = None
-        prev_partial_text = None
-        final_text_preview = None
-        clear_text()
-
-    set_state("idle", schedule_state_callback)
-
 
 class TextModificationCommand:
     def __init__(self, substitute: str, *word_combinations: str):
@@ -563,22 +551,48 @@ def on_schedule_state_timer(new_state, callback):
 
 def set_state(new_state, callback=None):
     global state
+    logger.debug(new_state)
     state = "timer"
     threading.Timer(0.2, on_schedule_state_timer, args=(new_state, callback)).start()
 
 
 def on_recognized_fragment(alternatives: list[str], is_final: bool):
-    handle_text(alternatives[0], is_final)
-    pass
-
-
-def recognize_thread():
-    recognize_from_microphone(on_recognized_fragment)
+    if state == "recording":
+        handle_text(alternatives[0], is_final)
 
 
 def on_recording():
+    global recognize_thread, recognize_thread_stop_event
     show_text(chat_channel)
-    threading.Thread(target=recognize_thread, daemon=True).start()
+
+    recognize_thread_stop_event = threading.Event()
+    recognize_thread = threading.Thread(
+        target=recognize_from_microphone,
+        args=(recognize_thread_stop_event, on_recognized_fragment),
+        daemon=True
+    )
+    recognize_thread.start()
+
+
+def on_idle():
+    global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
+    final_tokens = []
+    chat_channel = None
+    prev_partial_text = None
+    final_text_preview = None
+    clear_text()
+
+
+def to_idle():
+    global recognize_thread, recognize_thread_stop_event
+    logger.info("start")
+    if recognize_thread:
+        logger.info("recognize_thread is set. Stopping the thread")
+        recognize_thread_stop_event.set()
+        recognize_thread = None
+    else:
+        logger.info("recognize_thread is not set")
+    set_state("idle", on_idle)
 
 
 def handle_text_idle(partial_text: str):

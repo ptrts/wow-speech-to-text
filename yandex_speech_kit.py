@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Protocol
 import pyaudio
 import grpc
@@ -111,7 +112,7 @@ class RecognizedFragmentCallback(Protocol):
         ...
 
 
-def recognize_from_microphone(callback: RecognizedFragmentCallback):
+def recognize_from_microphone(stop_event: threading.Event, callback: RecognizedFragmentCallback):
     global recognizer, secret
 
     # Отправьте данные для распознавания.
@@ -142,6 +143,9 @@ def recognize_from_microphone(callback: RecognizedFragmentCallback):
     try:
         # Идем по итератору результатов распознания.
         for streaming_response in it:
+
+            if stop_event.is_set():
+                break
 
             # Будем собирать вот такой список каких-то там альтернатив.
             alternatives = None
