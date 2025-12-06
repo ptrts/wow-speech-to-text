@@ -79,7 +79,8 @@ def recognize_requests_generator():
                 ),
                 language_restriction=stt_pb2.LanguageRestrictionOptions(
                     restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                    language_code=['ru-RU']
+                    # language_code=['ru-RU', 'en-US'],
+                    language_code=['ru-RU'],
                 ),
                 audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
             )
