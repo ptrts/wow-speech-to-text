@@ -25,9 +25,14 @@ python -m grpc_tools.protoc -I yandex-cloud-cloudapi -I yandex-cloud-cloudapi/th
    --grpc_python_out=. ^
      google/api/http.proto ^
      google/api/annotations.proto ^
+     yandex/cloud/access/access.proto ^
      yandex/cloud/api/operation.proto ^
      google/rpc/status.proto ^
      yandex/cloud/operation/operation.proto ^
      yandex/cloud/validation.proto ^
      yandex/cloud/ai/stt/v3/stt_service.proto ^
-     yandex/cloud/ai/stt/v3/stt.proto
+     yandex/cloud/ai/stt/v3/stt.proto ^
+     yandex/cloud/resourcemanager/v1/cloud_service.proto ^
+     yandex/cloud/resourcemanager/v1/cloud.proto ^
+     yandex/cloud/resourcemanager/v1/folder_service.proto ^
+     yandex/cloud/resourcemanager/v1/folder.proto

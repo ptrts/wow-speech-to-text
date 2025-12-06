@@ -6,13 +6,15 @@ import pyaudio
 import grpc
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
+import yandex.cloud.resourcemanager.v1.cloud_service_pb2 as cloud_service_pb2
+import yandex.cloud.resourcemanager.v1.cloud_service_pb2_grpc as cloud_service_pb2_grpc
+import yandex.cloud.resourcemanager.v1.folder_service_pb2 as folder_service_pb2
+import yandex.cloud.resourcemanager.v1.folder_service_pb2_grpc as folder_service_pb2_grpc
+
 from app_logging import logging, TRACE
 
 
 logger = logging.getLogger(__name__)
-
-# todo Вынести из проекта или получать по Yandex Cloud API
-FOLDER_ID = "b1gq2ols8cpvtgum2j63"
 
 # Настройки потокового распознавания.
 FORMAT = pyaudio.paInt16
@@ -25,10 +27,11 @@ cred: grpc.ChannelCredentials | None = None
 channel: grpc.Channel | None = None
 recognizer: stt_service_pb2_grpc.RecognizerStub | None = None
 secret: str | None = None
+folder_id: str | None = None
 
 
 def yandex_speech_kit_init(secret_arg: str):
-    global cred, channel, recognizer, audio, secret
+    global cred, channel, recognizer, audio, secret, folder_id
 
     # Создаем дефолтный объект кредов для соединения.
     cred = grpc.ssl_channel_credentials()
@@ -44,6 +47,9 @@ def yandex_speech_kit_init(secret_arg: str):
 
     audio = pyaudio.PyAudio()
     secret = secret_arg
+
+    folders = list_folders()
+    folder_id = folders[0].id
 
 
 def yandex_speech_kit_shutdown():
@@ -134,7 +140,7 @@ def recognize_from_microphone(stop_event: threading.Event, callback: RecognizedF
 
             # Параметры для аутентификации с IAM-токеном
             ('authorization', f'Bearer {secret}'),
-            ('x-folder-id', FOLDER_ID),
+            ('x-folder-id', folder_id),
         )
     )
 
@@ -145,9 +151,6 @@ def recognize_from_microphone(stop_event: threading.Event, callback: RecognizedF
 
             if stop_event.is_set():
                 break
-
-            # Будем собирать вот такой список каких-то там альтернатив.
-            alternatives = None
 
             # Получаем имя того поля группы Event внутри StreamingResponse,
             # которое (поле) присутствует в StreamingResponse.
@@ -165,3 +168,29 @@ def recognize_from_microphone(stop_event: threading.Event, callback: RecognizedF
     except grpc._channel._Rendezvous as err:
         logger.error("Error code %s, message: %s", err._state.code, err._state.details)
         raise err
+
+
+def list_folders():
+    resource_manager_channel = grpc.secure_channel(
+        "resource-manager.api.cloud.yandex.net:443",
+        grpc.ssl_channel_credentials()
+    )
+    metadata = [("authorization", f"Bearer {secret}")]
+
+    cloud_stub = cloud_service_pb2_grpc.CloudServiceStub(resource_manager_channel)
+    clouds_resp = cloud_stub.List(cloud_service_pb2.ListCloudsRequest(), metadata=metadata)
+
+    # на практике у большинства один cloud; берём первый
+    cloud = clouds_resp.clouds[0]
+    logger.info("Cloud: %s %s", cloud.id, cloud.name)
+
+    folder_stub = folder_service_pb2_grpc.FolderServiceStub(resource_manager_channel)
+    folders_resp = folder_stub.List(
+        folder_service_pb2.ListFoldersRequest(cloud_id=cloud.id),
+        metadata=metadata,
+    )
+
+    for f in folders_resp.folders:
+        logger.info("id=%s, name=%s", f.id, f.name)
+
+    return folders_resp.folders
