@@ -17,10 +17,8 @@ FOLDER_ID = "b1gq2ols8cpvtgum2j63"
 # Настройки потокового распознавания.
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-SAMPLES_PER_SECOND = 8000
-SAMPLES_PER_BLOCK = 4096
-RECORD_SECONDS = 30
-WAVE_OUTPUT_FILENAME = "audio.wav"
+FRAMES_PER_SECOND = 16000
+FRAMES_PER_BUFFER = 4096
 
 audio: pyaudio.PyAudio | None = None
 cred: grpc.ChannelCredentials | None = None
@@ -63,14 +61,15 @@ def recognize_requests_generator():
                 audio_format=stt_pb2.AudioFormatOptions(
                     raw_audio=stt_pb2.RawAudio(
                         audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
-                        sample_rate_hertz=8000,
+                        sample_rate_hertz=FRAMES_PER_SECOND,
                         audio_channel_count=1
                     )
                 ),
                 text_normalization=stt_pb2.TextNormalizationOptions(
-                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                    profanity_filter=True,
-                    literature_text=False
+                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_DISABLED,
+                    profanity_filter=False,
+                    literature_text=False,
+                    phone_formatting_mode=stt_pb2.TextNormalizationOptions.PHONE_FORMATTING_MODE_DISABLED,
                 ),
                 language_restriction=stt_pb2.LanguageRestrictionOptions(
                     restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
@@ -87,16 +86,16 @@ def recognize_requests_generator():
         stream = audio.open(
             format=FORMAT,
             channels=CHANNELS,
-            rate=SAMPLES_PER_SECOND,
+            rate=FRAMES_PER_SECOND,
             input=True,
-            frames_per_buffer=SAMPLES_PER_BLOCK
+            frames_per_buffer=FRAMES_PER_BUFFER
         )
 
         logger.info("recording")
 
         while True:
             # Читаем из микрофона очередной блок.
-            data = stream.read(SAMPLES_PER_BLOCK)
+            data = stream.read(FRAMES_PER_BUFFER)
 
             # Отправляем считанный из микрофона блок на распознание.
             yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=data))
