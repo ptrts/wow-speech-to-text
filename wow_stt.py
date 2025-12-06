@@ -16,8 +16,8 @@ from overlay import start_overlay, show_text, clear_text
 from beeps import play_sound
 from russian_numerals import replace_russian_numbers
 from layout_switch import switch_to_russian
-from yandex_speech_kit_oauth import get_oauth_and_iam_tokens
-from yandex_speech_kit_demo import recognize_from_microphone
+from yandex_cloud_oauth import get_oauth_and_iam_tokens
+from yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
 from app_logging import logging, TRACE
 
 
@@ -567,6 +567,20 @@ def set_state(new_state, callback=None):
     threading.Timer(0.2, on_schedule_state_timer, args=(new_state, callback)).start()
 
 
+def recognized_fragment_callback(alternatives: list[str], is_final: bool):
+    # handle_text(alternatives[0], is_final)
+    pass
+
+
+def recognize_thread():
+    recognize_from_microphone(recognized_fragment_callback)
+
+
+def on_recording():
+    show_text(chat_channel)
+    threading.Thread(target=recognize_thread, daemon=True).start()
+
+
 def handle_text_idle(partial_text: str):
     global state, prev_partial_text, chat_channel
 
@@ -589,11 +603,7 @@ def handle_text_idle(partial_text: str):
     start_command_position, start_command = next(((i, w) for i, w in enumerate(tokens) if w in ACTIVATE_WORDS), (None, None))
     if start_command is not None:
         chat_channel = f"/{ACTIVATE_WORD_TO_CHAT_CHANNEL[start_command]}"
-
-        def schedule_state_callback():
-            show_text(chat_channel)
-
-        set_state("recording", schedule_state_callback)
+        set_state("recording", on_recording)
         prev_partial_text = None
 
 
@@ -694,17 +704,19 @@ def init_audio_stream():
 
 
 if __name__ == "__main__":
-    tokens = get_oauth_and_iam_tokens()
+    security_tokens = get_oauth_and_iam_tokens()
 
     print("Итог:")
-    for k, v in tokens.items():
+    for k, v in security_tokens.items():
         print(f"{k}: {v}")
 
-    iam_token = tokens["iam_token"]
-    recognize_from_microphone(iam_token)
+    iam_token = security_tokens["iam_token"]
+    yandex_speech_kit_init(iam_token)
 
     try:
         idle_recognition_loop()
     except KeyboardInterrupt:
         logger.info("")
         logger.info("[MAIN] Остановлено пользователем")
+    finally:
+        yandex_speech_kit_shutdown()
