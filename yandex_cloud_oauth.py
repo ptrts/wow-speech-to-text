@@ -146,8 +146,6 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         """
         self.wfile.write(html.encode("utf-8"))
 
-        # threading.Thread(target=self.server.shutdown, daemon=True).start()
-
     def log_message(self, format, *args):
         # чтобы не спамило логами
         pass
@@ -166,14 +164,16 @@ def wait_for_oauth_callback(httpd: OAuthTCPServer, timeout: float):
     started = time.time()
     while True:
         if time.time() - started > timeout:
-            httpd.shutdown()
+            threading.Thread(target=httpd.shutdown, daemon=True).start()
             raise TimeoutError("Не дождались OAuth-редиректа от Яндекса")
 
-        if httpd.auth_result is None:
+        auth_result = httpd.auth_result
+        if auth_result is None:
             time.sleep(0.1)
             continue
 
-        return httpd.auth_result
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
+        return auth_result
 
 
 def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
