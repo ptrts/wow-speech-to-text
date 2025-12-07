@@ -18,6 +18,7 @@ from russian_numerals import replace_russian_numbers
 from layout_switch import switch_to_russian
 from yandex_cloud_oauth import get_oauth_and_iam_tokens
 from yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
+from keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
 from app_logging import logging, TRACE
 
 
@@ -58,6 +59,7 @@ prev_partial_text: str | None = None
 chat_channel: str | None = None
 final_tokens: list[str] = []
 final_text_preview: str | None = None
+overlay_line_2: str | None = None
 recognize_thread: threading.Thread | None = None
 recognize_thread_stop_event: threading.Event | None = None
 q = queue.Queue()  # очередь аудио-данных
@@ -240,6 +242,9 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     Отправить сообщение в /bg:
       Enter, печать "/bg <текст>" как Unicode, Enter.
     """
+
+    global overlay_line_2
+
     text = text.strip()
     if not text:
         logger.info("Пустой текст, не отправляем")
@@ -254,6 +259,18 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
 
     # Небольшая пауза, чтобы не перебивать предыдущее действие
     time.sleep(KEY_DELAY)
+
+    if not keyboard_is_clean():
+        overlay_line_2 = "... Отпускай!"
+    refresh_overlay()
+
+    still_clean = wait_for_keyboard_clean()
+
+    overlay_line_2 = None
+    refresh_overlay()
+
+    if not still_clean:
+        return
 
     # Открываем чат
     pyautogui.press("enter")
@@ -326,6 +343,17 @@ TextModificationCommand("", "маленькая буква")
 TextModificationCommand("", "удалить")
 
 word_combination_and_text_modification_commands.sort(key=lambda it: len(it.word_combination.words), reverse=True)
+
+
+def refresh_overlay():
+    if state == "recording":
+        text = f"{chat_channel} {final_text_preview}"
+        if overlay_line_2:
+            text += overlay_line_2
+
+        show_text(text)
+    else:
+        clear_text()
 
 
 def refresh_final_text_preview(new_tokens: list[str]):
@@ -476,7 +504,7 @@ def refresh_final_text_preview(new_tokens: list[str]):
 
     final_text_preview = "".join(tokens)
 
-    show_text(f"{chat_channel} {final_text_preview}")
+    refresh_overlay()
 
     logger.debug(">>>")
     logger.debug(">>>")
@@ -575,12 +603,13 @@ def on_recording():
 
 
 def on_idle():
-    global state, final_tokens, chat_channel, prev_partial_text, final_text_preview
+    global state, final_tokens, chat_channel, prev_partial_text, final_text_preview, overlay_line_2
     final_tokens = []
     chat_channel = None
     prev_partial_text = None
     final_text_preview = None
-    clear_text()
+    overlay_line_2 = None
+    refresh_overlay()
 
 
 def to_idle():
