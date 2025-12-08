@@ -129,14 +129,15 @@ https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
 pip install --upgrade pip
 pip install setuptools vosk sounddevice pyautogui pyperclip pywin32 rus2num
 pip install grpcio-tools PyAudio
+pip install pytest
 ```
 
 Генерируем файлы .py для нужных нам интерфейсов Yandex Cloud gRPC:
 
 ```
 python -m grpc_tools.protoc -I yandex-cloud-cloudapi -I yandex-cloud-cloudapi/third_party/googleapis ^
-   --python_out=. ^
-   --grpc_python_out=. ^
+   --python_out=./src/. ^
+   --grpc_python_out=./src/ ^
      google/api/http.proto ^
      google/api/annotations.proto ^
      yandex/cloud/access/access.proto ^
