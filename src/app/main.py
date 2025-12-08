@@ -13,15 +13,15 @@ import pyautogui
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
-from overlay import start_overlay, show_text, clear_text
-from beeps import play_sound
-from layout_switch import switch_to_russian
-from yandex_cloud_oauth import get_oauth_and_iam_tokens
-from yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
-from keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
-from tokens_to_text_builder import build_text, tokens_to_text_builder_reset, tokens_to_text_builder_text
+from app.overlay import start_overlay, show_text, clear_text
+from app.beeps import play_sound
+from app.layout_switch import switch_to_russian
+from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
+from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
+from app.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
+from app.tokens_to_text_builder import build_text, tokens_to_text_builder_reset, tokens_to_text_builder_text
 
-from app_logging import logging, TRACE
+from app.app_logging import logging, TRACE
 
 
 logger = logging.getLogger(__name__)

@@ -12,7 +12,8 @@ import base64
 import hashlib
 from typing import Any, Dict
 import requests
-from app_logging import logging, TRACE
+
+from app.app_logging import logging, TRACE
 
 
 logger = logging.getLogger(__name__)

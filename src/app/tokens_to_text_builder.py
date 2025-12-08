@@ -2,7 +2,7 @@ from __future__ import annotations
 import copy
 from typing import cast
 
-from app_logging import logging
+from app.app_logging import logging
 
 
 _logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ _all_tokens: list[str] = []
 _final_token_index: int = -1
 _prev_partial_tokens: list[str] = []
 _text_actions: list[_TextAction] = []
-_token_index_to_text_action_index: dict[int, int]
+_token_index_to_text_action_index: dict[int, int] = {}
 
 
 class _SentenceState:

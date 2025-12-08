@@ -1,7 +1,7 @@
 import threading
 import queue
 import winsound
-from app_logging import logging
+from app.app_logging import logging
 
 logger = logging.getLogger(__name__)
 

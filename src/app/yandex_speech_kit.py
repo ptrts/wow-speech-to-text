@@ -4,6 +4,7 @@ import threading
 from typing import Protocol
 import pyaudio
 import grpc
+
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 import yandex.cloud.resourcemanager.v1.cloud_service_pb2 as cloud_service_pb2
@@ -11,7 +12,7 @@ import yandex.cloud.resourcemanager.v1.cloud_service_pb2_grpc as cloud_service_p
 import yandex.cloud.resourcemanager.v1.folder_service_pb2 as folder_service_pb2
 import yandex.cloud.resourcemanager.v1.folder_service_pb2_grpc as folder_service_pb2_grpc
 
-from app_logging import logging, TRACE
+from app.app_logging import logging, TRACE
 
 
 logger = logging.getLogger(__name__)
