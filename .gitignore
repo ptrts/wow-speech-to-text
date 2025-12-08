@@ -3,5 +3,5 @@
 vosk-model-*
 !vosk-model.txt
 .venv*
-google
-yandex
+src/google
+src/yandex
