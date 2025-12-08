@@ -58,12 +58,19 @@ KEY_DELAY = 0.05  # секунды
 # ================== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ==================
 
 state = "idle"  # "idle" | "timer" | "recording"
+chat_channel: str | None = None
+
+# todo Состояние формирования предложения. Вынести отдельно
+all_tokens: list[str] = []
+final_token_index: int = -1
 prev_partial_text: str | None = None
 prev_partial_tokens: list[str] | None = None
-chat_channel: str | None = None
-final_tokens: list[str] = []
+text_actions: list[TextAction] = []
+token_index_to_text_action_index: dict[int, int]
+
 text_preview: str | None = None
 overlay_line_2: str | None = None
+
 recognize_thread: threading.Thread | None = None
 recognize_thread_stop_event: threading.Event | None = None
 q = queue.Queue()  # очередь аудио-данных
@@ -397,10 +404,6 @@ class RemovalTextAction(TextAction):
         self.last_visible_addition_index = last_visible_addition_index
 
 
-text_actions: list[TextAction] = []
-token_index_to_text_action_index: dict[int, int]
-
-
 class SyntaxRules:
     def __init__(self, lean_left=False, lean_right=False, sentence_end=False, is_word=False):
         self.lean_left = lean_left
@@ -425,11 +428,15 @@ class SmartToken:
 
 word_combination_to_smart_token: dict[tuple[str, ...], SmartToken] = {}
 
+MAX_COMMAND_WORDS = 0
+
 
 def add_smart_token(syntax_rules: SyntaxRules | None, smart_token: str, *word_combinations: str):
+    global MAX_COMMAND_WORDS
     smart_token = SmartToken(smart_token, syntax_rules)
     for word_combination in word_combinations:
         words = word_combination.split()
+        MAX_COMMAND_WORDS = max(MAX_COMMAND_WORDS, len(words))
         word_combination_to_smart_token[tuple(words)] = smart_token
 
 
@@ -454,8 +461,6 @@ add_smart_token(SYNTAX_SENTENCE_END, ".", "точка")
 add_smart_token(SYNTAX_SENTENCE_END, "!", "восклицательный знак")
 add_smart_token(SYNTAX_SENTENCE_END, "?", "вопросительный знак")
 
-final_version_index = -1
-
 
 def get_first_diff_index(a: list[str], b: list[str]):
     for i, (x, y) in enumerate(zip(a, b)):
@@ -470,52 +475,52 @@ def get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, A
     if max_index is not None:
         j = min(j, max_index)
     while j >= 0:
-        text_version = text_actions[j]
-        if text_version is AdditionTextAction:
-            return j, cast(AdditionTextAction, text_version)
-        elif text_version is RemovalTextAction:
-            j = cast(RemovalTextAction, text_version).last_visible_addition_index
+        action = text_actions[j]
+        if action is AdditionTextAction:
+            return j, cast(AdditionTextAction, action)
+        elif action is RemovalTextAction:
+            j = cast(RemovalTextAction, action).last_visible_addition_index
         else:
-            raise TypeError(f"Unexpected subclass {type(text_version).__name__}")
+            raise TypeError(f"Unexpected subclass {type(action).__name__}")
     return j, None
 
 
-def refresh_text_preview(current_raw_tokens: list[str]):
-    global text_preview, final_version_index
+def refresh_text_preview(new_raw_tokens: list[str], is_final: bool):
+    global text_preview, all_tokens, final_token_index, prev_partial_tokens
 
-    i = get_first_diff_index(prev_partial_tokens, current_raw_tokens)
+    if final_token_index >= 0:
+        del all_tokens[final_token_index + 1:]
+    all_tokens.extend(new_raw_tokens)
 
-    if i is None:
+    first_diff_index = get_first_diff_index(prev_partial_tokens, new_raw_tokens)
+    if first_diff_index is None:
         logger.info("Same partial tokens")
         return
 
-    # Удаляем действия, по которым токены приходили в прошлый раз, а сейчас не пришли.
-    # Не важно, это действия добавления к тексту или удаления.
-    # Возможно корректируем индекс сырого токена, от которого мы пойдем формировать новые действия над текстом.
-    if i < len(current_raw_tokens):
-        first_discarded_action_index = token_index_to_text_action_index[i]
+    i = final_token_index + first_diff_index
+
+    # Вдруг, последние предыдущие токены - это часть команды, и только сейчас пришли завершающие токены этой команды?
+    # А по ним уже действия оформились. Надо бы эти действия значит откатить, и собрать по новой из освободившихся токенов.
+    max_one_side_tokens = MAX_COMMAND_WORDS - 1
+    if i >= max_one_side_tokens:
+        i -= max_one_side_tokens
+
+    # Откатываем действия.
+    first_discarded_action_index = token_index_to_text_action_index[i]
+    if first_discarded_action_index is not None:
         first_discarded_action = text_actions[first_discarded_action_index]
-        # Допустим версию создали по сочетанию слов "закрывающая скобка".
-        # Если в прошлый раз пришло "закрывающая", "скобка", а в этот раз "закрывающая", "собака", то
-        # ту версию, добавившую в текст ")" нужно откатить.
-        # После отката версии, применение новых сырых токенов нужно начинать с "закрывающая", а не с "собака",
-        # хоть "закрывающая" приходило и в прошлый раз и это не новый токен, как у нас здесь "собака".
+        # Токены будем применять с первого токена первого удаленного действия
         i = first_discarded_action.raw_tokens_indexes[1]
-
-        # Откатываем историю
         del text_actions[first_discarded_action_index:]
-
-    # todo А это куда? Может это делать уже где-то после всего? Или Яндекс и так это делает за нас?
-    # current_raw_tokens = replace_russian_numbers(current_raw_tokens)
 
     _, last_visible_addition = get_last_visible_text_addition()
     last_addition_sentence_state = last_visible_addition.sentence_state if last_visible_addition else SentenceState(open_quote=False, new_sentence=True)
 
     # Вот он этот наш самый главный цикл
-    while i < len(current_raw_tokens):
+    while i < len(all_tokens):
 
         # Достаем текущий сырой токен
-        token = current_raw_tokens[i]
+        token = all_tokens[i]
         logger.debug("i=%s, token=%s", i, token)
 
         if token == "удалить":
@@ -541,8 +546,7 @@ def refresh_text_preview(current_raw_tokens: list[str]):
             # Добавление к тексту
 
             # Может быть это команда?
-            max_command_words = 3
-            command_candidate_words = tuple(current_raw_tokens[i: i + max_command_words])
+            command_candidate_words = tuple(all_tokens[i: i + MAX_COMMAND_WORDS])
             substitute = None
             while len(command_candidate_words) > 0:
                 substitute = word_combination_to_smart_token[command_candidate_words]
@@ -614,6 +618,9 @@ def refresh_text_preview(current_raw_tokens: list[str]):
 
     text_preview = last_visible_addition.text if last_visible_addition else ""
 
+    # todo А это нужно? Или Яндекс и так это делает за нас?
+    # new_raw_tokens = replace_russian_numbers(new_raw_tokens)
+
     refresh_overlay()
 
     logger.debug(">>>")
@@ -622,9 +629,15 @@ def refresh_text_preview(current_raw_tokens: list[str]):
     logger.debug(">>>")
     logger.debug(">>>")
 
+    if is_final:
+        final_token_index = len(all_tokens) - 1
+        prev_partial_tokens = []
+    else:
+        prev_partial_tokens = new_raw_tokens
+
 
 def handle_text(partial_text: str, is_final: bool):
-    global state, prev_partial_text, prev_partial_tokens, final_tokens, chat_channel, text_preview
+    global prev_partial_text, chat_channel, text_preview
 
     partial_text = partial_text.strip().lower()
     if not partial_text:
@@ -640,10 +653,9 @@ def handle_text(partial_text: str, is_final: bool):
     tokens = partial_text.split()
 
     prev_partial_text = partial_text
-    prev_partial_tokens = tokens
 
     # Печатаем, какие слова там получились
-    logger.debug("tokens=%s, state=%r", tokens, state)
+    logger.debug("tokens=%s", tokens)
 
     stop_commands = SEND_WORDS | CANCEL_WORDS
     stop_command_position, stop_command = next(
@@ -656,14 +668,10 @@ def handle_text(partial_text: str, is_final: bool):
 
     if stop_command is None:
         logger.debug("Нет стоп команды")
-        if is_final:
-            final_tokens.extend(tokens)
-            logger.info("Фраза финальная. Сохранили tokens=%s в final_tokens=%s, chat_channel=%s", tokens, final_tokens, chat_channel)
-            tokens.clear()
-        refresh_text_preview(tokens)
+        refresh_text_preview(tokens, is_final)
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
-        refresh_text_preview(tokens)
+        refresh_text_preview(tokens, is_final)
         if text_preview:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
@@ -715,11 +723,18 @@ def on_recording():
 
 
 def on_idle():
-    global state, final_tokens, chat_channel, prev_partial_text, text_preview, overlay_line_2
-    final_tokens = []
+    global state, chat_channel, final_token_index, prev_partial_text, text_preview, overlay_line_2
     chat_channel = None
+
+    # todo Сброс всего состояния инкрементального формирования текста. Вынести отдельно
+    all_tokens.clear()
+    final_token_index = -1
     prev_partial_text = None
+    prev_partial_tokens.clear()
+    text_actions.clear()
+    token_index_to_text_action_index.clear()
     text_preview = None
+
     overlay_line_2 = None
     refresh_overlay()
 
