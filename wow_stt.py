@@ -1,3 +1,4 @@
+from __future__ import annotations
 import ctypes
 import json
 import queue
@@ -7,6 +8,8 @@ from pathlib import Path
 import threading
 import win32clipboard as cb
 import win32con
+import copy
+from typing import cast
 
 import pyautogui
 import sounddevice as sd
@@ -56,9 +59,10 @@ KEY_DELAY = 0.05  # секунды
 
 state = "idle"  # "idle" | "timer" | "recording"
 prev_partial_text: str | None = None
+prev_partial_tokens: list[str] | None = None
 chat_channel: str | None = None
 final_tokens: list[str] = []
-final_text_preview: str | None = None
+text_preview: str | None = None
 overlay_line_2: str | None = None
 recognize_thread: threading.Thread | None = None
 recognize_thread_stop_event: threading.Event | None = None
@@ -347,7 +351,7 @@ word_combination_and_text_modification_commands.sort(key=lambda it: len(it.word_
 
 def refresh_overlay():
     if state == "recording":
-        text = f"{chat_channel} {final_text_preview}"
+        text = f"{chat_channel} {text_preview}"
         if overlay_line_2:
             text += overlay_line_2
 
@@ -356,165 +360,271 @@ def refresh_overlay():
         clear_text()
 
 
-def refresh_final_text_preview(new_tokens: list[str]):
-    global final_tokens, final_text_preview
+class SentenceState:
+    def __init__(self, open_quote=False, new_sentence=True):
+        self.open_quote = open_quote
+        self.new_sentence = new_sentence
 
-    tokens = final_tokens.copy()
-    tokens.extend(new_tokens)
 
-    if "очистить" in tokens:
-        final_tokens = []
-        tokens = []
+class TextAction:
+    def __init__(self, raw_tokens_indexes: tuple[int, ...]):
+        self.raw_tokens_indexes = raw_tokens_indexes
 
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
+
+class AdditionTextAction(TextAction):
+    def __init__(
+            self,
+            raw_tokens_indexes: tuple[int, ...],
+            addition: str,
+            syntax_rules: SyntaxRules,
+            sentence_state: SentenceState,
+            text: str,
+    ):
+        super().__init__(raw_tokens_indexes)
+        self.addition = addition
+        self.syntax_rules = syntax_rules
+        self.sentence_state = sentence_state
+        self.text = text
+
+
+class RemovalTextAction(TextAction):
+    def __init__(
+            self,
+            raw_tokens_indexes: tuple[int, ...],
+            last_visible_addition_index: int,
+    ):
+        super().__init__(raw_tokens_indexes)
+        self.last_visible_addition_index = last_visible_addition_index
+
+
+text_actions: list[TextAction] = []
+token_index_to_text_action_index: dict[int, int]
+
+
+class SyntaxRules:
+    def __init__(self, lean_left=False, lean_right=False, sentence_end=False, is_word=False):
+        self.lean_left = lean_left
+        self.lean_right = lean_right
+        self.sentence_end = sentence_end
+        self.is_word = is_word
+
+
+SYNTAX_LEAN_NONE = SyntaxRules()
+SYNTAX_LEAN_LEFT = SyntaxRules(lean_left=True)
+SYNTAX_LEAN_RIGHT = SyntaxRules(lean_right=True)
+SYNTAX_LEAN_BOTH = SyntaxRules(lean_left=True, lean_right=True)
+SYNTAX_SENTENCE_END = SyntaxRules(lean_left=True, sentence_end=True)
+SYNTAX_WORD = SyntaxRules(is_word=True)
+
+
+class SmartToken:
+    def __init__(self, text: str, syntax_rules: SyntaxRules | None):
+        self.text = text
+        self.syntax_rules = syntax_rules
+
+
+word_combination_to_smart_token: dict[tuple[str, ...], SmartToken] = {}
+
+
+def add_smart_token(syntax_rules: SyntaxRules | None, smart_token: str, *word_combinations: str):
+    smart_token = SmartToken(smart_token, syntax_rules)
+    for word_combination in word_combinations:
+        words = word_combination.split()
+        word_combination_to_smart_token[tuple(words)] = smart_token
+
+
+add_smart_token(SYNTAX_LEAN_LEFT, ",", "запятая")
+add_smart_token(SYNTAX_LEAN_LEFT, ";", "точка с запятой")
+add_smart_token(SYNTAX_LEAN_LEFT, ":", "двоеточие")
+add_smart_token(SYNTAX_LEAN_LEFT, "...", "многоточие")
+
+add_smart_token(SYNTAX_LEAN_RIGHT, "(", "открывающая скобка", "открыть скобку", "скобка")
+add_smart_token(SYNTAX_LEAN_LEFT, ")", "закрывающая скобка", "закрыть скобку")
+
+add_smart_token(None, "\"", "кавычки")
+
+add_smart_token(SYNTAX_LEAN_BOTH, "-", "дефис")
+add_smart_token(SYNTAX_LEAN_BOTH, "/", "слэш")
+add_smart_token(SYNTAX_LEAN_BOTH, "\\", "обратный слэш")
+add_smart_token(SYNTAX_LEAN_BOTH, " ", "пробел")
+
+add_smart_token(SYNTAX_LEAN_NONE, "-", "тире")
+
+add_smart_token(SYNTAX_SENTENCE_END, ".", "точка")
+add_smart_token(SYNTAX_SENTENCE_END, "!", "восклицательный знак")
+add_smart_token(SYNTAX_SENTENCE_END, "?", "вопросительный знак")
+
+final_version_index = -1
+
+
+def get_first_diff_index(a: list[str], b: list[str]):
+    for i, (x, y) in enumerate(zip(a, b)):
+        if x != y:
+            return i
+    # если цикл не нашёл разницы
+    return min(len(a), len(b)) if len(a) != len(b) else None
+
+
+def get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, AdditionTextAction | None]:
+    j = len(text_actions) - 1
+    if max_index is not None:
+        j = min(j, max_index)
+    while j >= 0:
+        text_version = text_actions[j]
+        if text_version is AdditionTextAction:
+            return j, cast(AdditionTextAction, text_version)
+        elif text_version is RemovalTextAction:
+            j = cast(RemovalTextAction, text_version).last_visible_addition_index
+        else:
+            raise TypeError(f"Unexpected subclass {type(text_version).__name__}")
+    return j, None
+
+
+def refresh_text_preview(current_raw_tokens: list[str]):
+    global text_preview, final_version_index
+
+    i = get_first_diff_index(prev_partial_tokens, current_raw_tokens)
+
+    if i is None:
+        logger.info("Same partial tokens")
+        return
+
+    # Удаляем действия, по которым токены приходили в прошлый раз, а сейчас не пришли.
+    # Не важно, это действия добавления к тексту или удаления.
+    # Возможно корректируем индекс сырого токена, от которого мы пойдем формировать новые действия над текстом.
+    if i < len(current_raw_tokens):
+        first_discarded_action_index = token_index_to_text_action_index[i]
+        first_discarded_action = text_actions[first_discarded_action_index]
+        # Допустим версию создали по сочетанию слов "закрывающая скобка".
+        # Если в прошлый раз пришло "закрывающая", "скобка", а в этот раз "закрывающая", "собака", то
+        # ту версию, добавившую в текст ")" нужно откатить.
+        # После отката версии, применение новых сырых токенов нужно начинать с "закрывающая", а не с "собака",
+        # хоть "закрывающая" приходило и в прошлый раз и это не новый токен, как у нас здесь "собака".
+        i = first_discarded_action.raw_tokens_indexes[1]
+
+        # Откатываем историю
+        del text_actions[first_discarded_action_index:]
+
+    # todo А это куда? Может это делать уже где-то после всего? Или Яндекс и так это делает за нас?
+    # current_raw_tokens = replace_russian_numbers(current_raw_tokens)
+
+    _, last_visible_addition = get_last_visible_text_addition()
+    last_addition_sentence_state = last_visible_addition.sentence_state if last_visible_addition else SentenceState(open_quote=False, new_sentence=True)
+
+    # Вот он этот наш самый главный цикл
+    while i < len(current_raw_tokens):
+
+        # Достаем текущий сырой токен
+        token = current_raw_tokens[i]
         logger.debug("i=%s, token=%s", i, token)
+
         if token == "удалить":
-            if i > 0:
-
-                # Идем назад, ищем не пробел
-                j = i - 1
-                while j >= 0:
-                    logger.debug("j=%s, tokens[j]=%s", j, tokens[j])
-                    if tokens[j] != "пробел":
-                        logger.debug("From here!")
-                        break
-                    j -= 1
-                logger.debug("j=%s, tokens[j: i + 1]=%s", j, tokens[j: i + 1])
-
-                # Удаляем этот не пробел, текущий токен, и все пробелы между ними.
-                tokens[j: i + 1] = []
-                i = j
+            # Какое сейчас последнее видимое добавление?
+            last_visible_addition_index, last_visible_addition = get_last_visible_text_addition()
+            if last_visible_addition_index >= 0:
+                # А когда мы его откатим, тогда какое будет последнее видимое добавление?
+                last_visible_addition_index, last_visible_addition = get_last_visible_text_addition(last_visible_addition_index - 1)
             else:
-                tokens[i: i + 1] = []
-                i = 0
+                # Последнего видимого добавления нет. Это значит, что видимый текст пустой
+                pass
+
+            new_text_action = RemovalTextAction(
+                raw_tokens_indexes=(i,),
+                last_visible_addition_index=last_visible_addition_index,
+            )
+        elif token == "очистить":
+            new_text_action = RemovalTextAction(
+                raw_tokens_indexes=(i,),
+                last_visible_addition_index=-1,
+            )
         else:
-            i += 1
+            # Добавление к тексту
 
-    tokens = replace_russian_numbers(tokens)
+            # Может быть это команда?
+            max_command_words = 3
+            command_candidate_words = tuple(current_raw_tokens[i: i + max_command_words])
+            substitute = None
+            while len(command_candidate_words) > 0:
+                substitute = word_combination_to_smart_token[command_candidate_words]
+                if substitute:
+                    break
+                command_candidate_words = command_candidate_words[:-1]
 
-    logger.debug("final_tokens=%s, new_tokens=%s, tokens=%s", final_tokens, new_tokens, tokens)
-
-    open_quote = False
-    prev_token_category: str | None = None
-    new_sentence = True
-
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
-        logger.debug("i=%s, token=%s", i, token)
-
-        is_word = True
-        command = None
-        for word_combination_and_command in word_combination_and_text_modification_commands:
-            words = word_combination_and_command.word_combination.words
-            command = word_combination_and_command.command
-
-            logger.debug("i=%s, command.code=%s, words=%s", i, command.code, words)
-
-            if tokens[i: i + len(words)] == words:
-                is_word = False
-                token = command.code
-                tokens[i: i + len(words)] = [token]
-                logger.debug("i=%s, word combination match, tokens=%s", i, tokens)
-                break
+            if substitute:
+                token = substitute.text
+                syntax_rules = substitute.syntax_rules
+                raw_tokens_number = len(command_candidate_words)
             else:
-                command = None
+                syntax_rules = SYNTAX_WORD
+                raw_tokens_number = 1
+            raw_tokens_indexes = tuple(range(i, i + raw_tokens_number))
 
-        if token == "КАВЫЧКИ":
-            open_quote = not open_quote
-            if open_quote:
-                token = tokens[i] = "ОТКРЫВАЮЩИЕ_КАВЫЧКИ"
-                logger.debug("Данные кавычки - открывающие, token=%s", token)
-            else:
-                token = tokens[i] = "ЗАКРЫВАЮЩИЕ_КАВЫЧКИ"
-                logger.debug("Данные кавычки - закрывающие, token=%s", token)
+            # Наследуем объект состояния как мы его оставим после себя
+            # от
+            # объекта состояния как его оставило после себя предыдущее добавление к тексту
+            this_addition_sentence_state = copy.copy(last_addition_sentence_state)
 
-        if is_word:
-            token_category = "СЛОВО"
-        elif token in ["ОТКРЫВАЮЩИЕ_КАВЫЧКИ", "ОТКРЫВАЮЩАЯ_СКОБКА"]:
-            token_category = "ОТКРЫВАТЕЛЬ"
-        elif token in ["ЗАКРЫВАЮЩИЕ_КАВЫЧКИ", "ЗАКРЫВАЮЩАЯ_СКОБКА"]:
-            token_category = "ЗАКРЫВАТЕЛЬ"
-        elif token in ["ТОЧКА", "ВОСКЛИЦАТЕЛЬНЫЙ_ЗНАК", "ВОПРОСИТЕЛЬНЫЙ_ЗНАК"]:
-            token_category = "КОНЕЦ_ПРЕДЛОЖЕНИЯ"
-        elif token in ["ЗАПЯТАЯ", "ТОЧКА_С_ЗАПЯТОЙ", "ДВОЕТОЧИЕ", "ТРОЕТОЧИЕ"]:
-            token_category = "ТИПА_ЗАПЯТОЙ"
-        elif token in ["ТИРЕ"]:
-            token_category = "ТИРЕ"
-        elif token in ["ПРОБЕЛ"]:
-            token_category = "ПРОБЕЛ"
-        else:
-            token_category = None
+            # Открывающие и закрывающие кавычки
+            if token == "\"":
+                this_addition_sentence_state.open_quote = not this_addition_sentence_state.open_quote
+                if this_addition_sentence_state.open_quote:
+                    syntax_rules = SYNTAX_LEAN_RIGHT
+                    logger.debug("Данные кавычки - открывающие")
+                else:
+                    syntax_rules = SYNTAX_LEAN_LEFT
+                    logger.debug("Данные кавычки - закрывающие")
+            logger.debug("new_sentence=%s", this_addition_sentence_state.new_sentence)
 
-        logger.debug("token_category=%s", token_category)
+            # Большие буквы в начале предложения
+            if syntax_rules.sentence_end:
+                this_addition_sentence_state.new_sentence = True
+            elif syntax_rules.is_word and this_addition_sentence_state.new_sentence:
+                token = token.capitalize()
+                this_addition_sentence_state.new_sentence = False
+            logger.debug("new_sentence=%s, token=%s", this_addition_sentence_state.new_sentence, token)
 
-        logger.debug("new_sentence=%s", new_sentence)
+            # Расстановка пробелов
+            not_need_space = last_visible_addition is None or last_visible_addition.syntax_rules.lean_right or syntax_rules.lean_left
+            need_space = not not_need_space
+            space_or_empty = " " if need_space else ""
 
-        if token_category == "КОНЕЦ_ПРЕДЛОЖЕНИЯ":
-            new_sentence = True
-        elif token_category == "СЛОВО" and new_sentence:
-            token = tokens[i] = token.capitalize()
-            new_sentence = False
+            # Новая версия текста
+            new_text = last_visible_addition.text + space_or_empty + token
+            new_text_action = AdditionTextAction(
+                raw_tokens_indexes=raw_tokens_indexes,
+                addition=token,
+                syntax_rules=syntax_rules,
+                sentence_state=this_addition_sentence_state,
+                text=new_text,
+            )
 
-        logger.debug("new_sentence=%s, token=%s", new_sentence, token)
+        text_actions.append(new_text_action)
 
-        if command:
-            if command.substitute:
-                token = tokens[i] = command.substitute
-            else:
-                token = None
-                tokens[i: i + 1] = []
-                i -= 1
-            logger.debug("token=%s, tokens=%s", token, tokens)
+        _, last_visible_addition = get_last_visible_text_addition()
+        last_addition_sentence_state = last_visible_addition.sentence_state if last_visible_addition else SentenceState(open_quote=False, new_sentence=True)
 
-        need_space = False
-        if prev_token_category == "СЛОВО" and token_category == "СЛОВО":
-            need_space = True
-        elif prev_token_category == "СЛОВО" and token_category == "ОТКРЫВАТЕЛЬ":
-            need_space = True
-        elif prev_token_category == "ЗАКРЫВАТЕЛЬ" and token_category == "СЛОВО":
-            need_space = True
-        elif prev_token_category == "КОНЕЦ_ПРЕДЛОЖЕНИЯ" and token_category == "СЛОВО":
-            need_space = True
-        elif prev_token_category == "КОНЕЦ_ПРЕДЛОЖЕНИЯ" and token_category == "ОТКРЫВАТЕЛЬ":
-            need_space = True
-        elif prev_token_category == "ТИПА_ЗАПЯТОЙ" and token_category == "СЛОВО":
-            need_space = True
-        elif prev_token_category == "ТИПА_ЗАПЯТОЙ" and token_category == "ОТКРЫВАТЕЛЬ":
-            need_space = True
-        elif prev_token_category == "ТИРЕ" and token_category != "ПРОБЕЛ":
-            need_space = True
-        elif prev_token_category != "ПРОБЕЛ" and token_category == "ТИРЕ":
-            need_space = True
+        # Записываем связь от сырых токенов к версии
+        this_version_index = len(text_actions) - 1
+        for token_index in new_text_action.raw_tokens_indexes:
+            token_index_to_text_action_index[token_index] = this_version_index
 
-        logger.debug("prev_token_category=%s, token_category=%s, need_space=%s", prev_token_category, token_category, need_space)
+        logger.debug("new_text_action=%s", new_text_action)
 
-        # Заменяем текущий токен на его представление
+        i += len(new_text_action.raw_tokens_indexes)
 
-        if need_space:
-            tokens[i: i+1] = [" ", token]
-            logger.debug("Добавили пробел. tokens=%s", tokens)
-            i += 1
-
-        prev_token_category = token_category
-
-        i += 1
-
-    final_text_preview = "".join(tokens)
+    text_preview = last_visible_addition.text if last_visible_addition else ""
 
     refresh_overlay()
 
     logger.debug(">>>")
     logger.debug(">>>")
-    logger.debug(final_text_preview)
+    logger.debug(text_preview)
     logger.debug(">>>")
     logger.debug(">>>")
 
 
 def handle_text(partial_text: str, is_final: bool):
-    global state, prev_partial_text, final_tokens, chat_channel, final_text_preview
+    global state, prev_partial_text, prev_partial_tokens, final_tokens, chat_channel, text_preview
 
     partial_text = partial_text.strip().lower()
     if not partial_text:
@@ -526,10 +636,12 @@ def handle_text(partial_text: str, is_final: bool):
 
     logger.info("partial_text=%s, is_final=%s", partial_text, is_final)
 
-    prev_partial_text = partial_text
-
     # Разбиваем текст частичного результата на слова
     tokens = partial_text.split()
+
+    prev_partial_text = partial_text
+    prev_partial_tokens = tokens
+
     # Печатаем, какие слова там получились
     logger.debug("tokens=%s, state=%r", tokens, state)
 
@@ -548,14 +660,14 @@ def handle_text(partial_text: str, is_final: bool):
             final_tokens.extend(tokens)
             logger.info("Фраза финальная. Сохранили tokens=%s в final_tokens=%s, chat_channel=%s", tokens, final_tokens, chat_channel)
             tokens.clear()
-        refresh_final_text_preview(tokens)
+        refresh_text_preview(tokens)
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
-        refresh_final_text_preview(tokens)
-        if final_text_preview:
+        refresh_text_preview(tokens)
+        if text_preview:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
-            send_to_wow_chat(chat_channel, final_text_preview, let_edit=(stop_command == "дописать"))
+            send_to_wow_chat(chat_channel, text_preview, let_edit=(stop_command == "дописать"))
             play_sound("sending_complete")
         else:
             play_sound("sending_error")
@@ -603,11 +715,11 @@ def on_recording():
 
 
 def on_idle():
-    global state, final_tokens, chat_channel, prev_partial_text, final_text_preview, overlay_line_2
+    global state, final_tokens, chat_channel, prev_partial_text, text_preview, overlay_line_2
     final_tokens = []
     chat_channel = None
     prev_partial_text = None
-    final_text_preview = None
+    text_preview = None
     overlay_line_2 = None
     refresh_overlay()
 
