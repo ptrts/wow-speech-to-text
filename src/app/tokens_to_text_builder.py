@@ -159,9 +159,10 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
     if first_diff_index is None:
         _logger.debug("Same partial tokens")
-        return text
-
-    i = _final_token_index + 1 + first_diff_index
+        # Здесь захода в цикл обхода новых токенов не будет, как будто все новые токены уже обработали.
+        i = len(_all_tokens)
+    else:
+        i = _final_token_index + 1 + first_diff_index
 
     _logger.debug("i=%s", i)
 

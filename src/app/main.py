@@ -331,9 +331,11 @@ def handle_text(partial_text: str, is_final: bool):
     if stop_command is None:
         logger.debug("Нет стоп команды")
         tokens_to_text_builder.build_text(tokens, is_final)
+        refresh_overlay()
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
         tokens_to_text_builder.build_text(tokens, is_final)
+        refresh_overlay()
         if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")

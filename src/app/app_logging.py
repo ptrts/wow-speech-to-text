@@ -6,6 +6,7 @@ logging.addLevelName(TRACE, "TRACE")
 logging.basicConfig(
 
     level=logging.INFO,
+    # level=logging.DEBUG,
     # level=TRACE,
 
     format="%(asctime)s.%(msecs)03d [%(levelname)s] %(filename)s/%(funcName)s:%(lineno)d: %(message)s",

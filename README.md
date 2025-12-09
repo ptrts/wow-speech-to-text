@@ -95,7 +95,7 @@ Enter (отправка сообщения).
 git clone https://github.com/yandex-cloud/cloudapi yandex-cloud-cloudapi
 ```
 
-Скачиваем и распаковываем такую Vosk модель в подкаталог проекта vosk-model-small-ru-0.22
+Скачиваем и распаковываем такую Vosk модель в подкаталог проекта [./src/resources/vosk-model-small-ru-0.22](./src/resources/vosk-model-small-ru-0.22):
 
 https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
 
