@@ -38,23 +38,23 @@ class _AdditionTextAction(_TextAction):
             addition: str,
             syntax_rules: _SyntaxRules,
             sentence_state: _SentenceState,
-            text_arg: str,
+            text_version: str,
     ):
         super().__init__(raw_tokens_indexes)
         self.addition = addition
         self.syntax_rules = syntax_rules
         self.sentence_state = sentence_state
-        self.text = text_arg
+        self.text_version = text_version
 
 
 class _RemovalTextAction(_TextAction):
     def __init__(
             self,
             raw_tokens_indexes: tuple[int, ...],
-            last_visible_addition_index: int,
+            base_action_index: int,
     ):
         super().__init__(raw_tokens_indexes)
-        self.last_visible_addition_index = last_visible_addition_index
+        self.base_action_index = base_action_index
 
 
 class _SyntaxRules:
@@ -132,7 +132,7 @@ def _get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, 
         if isinstance(action, _AdditionTextAction):
             return j, cast(_AdditionTextAction, action)
         elif isinstance(action, _RemovalTextAction):
-            j = cast(_RemovalTextAction, action).last_visible_addition_index
+            j = cast(_RemovalTextAction, action).base_action_index
         else:
             raise TypeError(f"Unexpected subclass {type(action).__name__}")
     return j, None
@@ -210,15 +210,44 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
             new_text_action = _RemovalTextAction(
                 raw_tokens_indexes=(i,),
-                last_visible_addition_index=last_visible_addition_index,
+                base_action_index=last_visible_addition_index,
             )
         elif token == "очистить":
             new_text_action = _RemovalTextAction(
                 raw_tokens_indexes=(i,),
-                last_visible_addition_index=-1,
+                base_action_index=-1,
             )
         else:
             # Добавление к тексту
+
+            command_start = -1
+            command_end = -1
+            command_candidate_words = None
+            substitute = None
+            for command_words_number in range(_MAX_COMMAND_WORDS, 0, -1):
+                max_command_words_before_number = command_words_number - 1
+                for command_words_before_number in range(max_command_words_before_number, -1, -1):
+                    command_start = i - command_words_before_number
+                    if command_start < 0:
+                        continue
+                    command_words_after_number = command_words_number - command_words_before_number - 1
+                    command_end = i + command_words_after_number
+                    command_candidate_words = tuple(_all_tokens[command_start: command_end + 1])
+
+                    substitute = _word_combination_to_smart_token.get(command_candidate_words)
+                    if substitute:
+                        break
+                if substitute:
+                    break
+
+            pass
+
+
+
+
+
+
+
 
             # Может быть это команда?
             command_candidate_words = tuple(_all_tokens[i: i + _MAX_COMMAND_WORDS])
@@ -268,14 +297,14 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
             space_or_empty = " " if need_space else ""
 
             # Новая версия текста
-            prev_text = last_visible_addition.text if last_visible_addition else ""
+            prev_text = last_visible_addition.text_version if last_visible_addition else ""
             new_text = prev_text + space_or_empty + token
             new_text_action = _AdditionTextAction(
                 raw_tokens_indexes=raw_tokens_indexes,
                 addition=token,
                 syntax_rules=syntax_rules,
                 sentence_state=this_addition_sentence_state,
-                text_arg=new_text,
+                text_version=new_text,
             )
 
         _text_actions.append(new_text_action)
@@ -292,7 +321,7 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
         i += len(new_text_action.raw_tokens_indexes)
 
-    text = last_visible_addition.text if last_visible_addition else ""
+    text = last_visible_addition.text_version if last_visible_addition else ""
 
     # todo А это нужно? Или Яндекс и так это делает за нас?
     # new_raw_tokens = replace_russian_numbers(new_raw_tokens)
