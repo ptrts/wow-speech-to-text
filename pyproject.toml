@@ -4,3 +4,6 @@ version = "0.1.0"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+log_cli = true
+log_cli_level = 5
+disable_test_id_escaping_and_forfeit_all_rights_to_community_support = true

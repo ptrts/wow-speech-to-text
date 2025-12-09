@@ -40,7 +40,7 @@ https://yandex.cloud/ru/price-list
 Запуск:
 
 ```
-wow_stt.cmd
+main.cmd
 ```
 
 Оно открывается в консоли и сначала висит тихо фоном в режиме ожидания. 
@@ -75,7 +75,7 @@ Enter (отправка сообщения).
 
 Числительные заменяются умным образом на числа. 
 
-Подробнее смотрите в коде [wow_stt.py](./wow_stt.py).
+Подробнее смотрите в коде [src/app/main.py](./src/app/main.py).
 
 # Настройка и запуск
 
@@ -126,7 +126,7 @@ https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
 В **ТОЙ КОМАНДНОЙ СТРОКЕ ^^**, выполняем следующие команды для настройки окружения:
 
 ```
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install setuptools vosk sounddevice pyautogui pyperclip pywin32 rus2num
 pip install grpcio-tools PyAudio
 pip install pytest
@@ -156,5 +156,5 @@ python -m grpc_tools.protoc -I yandex-cloud-cloudapi -I yandex-cloud-cloudapi/th
 Теперь можно запускать:
 
 ```
-wow_stt.cmd
+main.cmd
 ```

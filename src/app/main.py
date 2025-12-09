@@ -19,7 +19,7 @@ from app.layout_switch import switch_to_russian
 from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
 from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
 from app.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
-from app.tokens_to_text_builder import build_text, tokens_to_text_builder_reset, tokens_to_text_builder_text
+import app.tokens_to_text_builder as tokens_to_text_builder
 
 from app.app_logging import logging, TRACE
 
@@ -289,7 +289,7 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
 
 def refresh_overlay():
     if state == "recording":
-        text = f"{chat_channel} {tokens_to_text_builder_text}"
+        text = f"{chat_channel} {tokens_to_text_builder.text}"
         if overlay_line_2:
             text += overlay_line_2
 
@@ -330,14 +330,14 @@ def handle_text(partial_text: str, is_final: bool):
 
     if stop_command is None:
         logger.debug("Нет стоп команды")
-        build_text(tokens, is_final)
+        tokens_to_text_builder.build_text(tokens, is_final)
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
-        build_text(tokens, is_final)
-        if tokens_to_text_builder_text:
+        tokens_to_text_builder.build_text(tokens, is_final)
+        if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
-            send_to_wow_chat(chat_channel, tokens_to_text_builder_text, let_edit=(stop_command == "дописать"))
+            send_to_wow_chat(chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
             play_sound("sending_complete")
         else:
             play_sound("sending_error")
@@ -388,7 +388,7 @@ def on_idle():
     global chat_channel, prev_partial_text, overlay_line_2
     chat_channel = None
     prev_partial_text = None
-    tokens_to_text_builder_reset()
+    tokens_to_text_builder.reset()
     overlay_line_2 = None
     refresh_overlay()
 

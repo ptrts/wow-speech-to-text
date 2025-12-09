@@ -8,10 +8,10 @@ from app.app_logging import logging
 _logger = logging.getLogger(__name__)
 
 
-__all__ = ["tokens_to_text_builder_text", "build_text", "tokens_to_text_builder_reset"]
+__all__ = ["text", "build_text", "reset"]
 
 
-tokens_to_text_builder_text: str = ""
+text: str = ""
 
 _all_tokens: list[str] = []
 _final_token_index: int = -1
@@ -129,9 +129,9 @@ def _get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, 
         j = min(j, max_index)
     while j >= 0:
         action = _text_actions[j]
-        if action is _AdditionTextAction:
+        if isinstance(action, _AdditionTextAction):
             return j, cast(_AdditionTextAction, action)
-        elif action is _RemovalTextAction:
+        elif isinstance(action, _RemovalTextAction):
             j = cast(_RemovalTextAction, action).last_visible_addition_index
         else:
             raise TypeError(f"Unexpected subclass {type(action).__name__}")
@@ -139,31 +139,53 @@ def _get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, 
 
 
 def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
-    global tokens_to_text_builder_text, _all_tokens, _final_token_index, _prev_partial_tokens
+    global text, _all_tokens, _final_token_index, _prev_partial_tokens
 
-    if _final_token_index >= 0:
-        del _all_tokens[_final_token_index + 1:]
+    _logger.debug(
+        "_all_tokens=%s, _final_token_index=%s, _prev_partial_tokens=%s, new_raw_tokens=%s, is_final=%s",
+        _all_tokens, _final_token_index, _prev_partial_tokens, new_raw_tokens, is_final
+    )
+
+    del _all_tokens[_final_token_index + 1:]
     _all_tokens.extend(new_raw_tokens)
 
-    first_diff_index = _get_first_diff_index(_prev_partial_tokens, new_raw_tokens)
-    if first_diff_index is None:
-        _logger.info("Same partial tokens")
-        return tokens_to_text_builder_text
+    _logger.debug("_all_tokens=%s", _all_tokens)
 
-    i = _final_token_index + first_diff_index
+    first_diff_index = _get_first_diff_index(_prev_partial_tokens, new_raw_tokens)
+
+    _logger.debug("first_diff_index=%s", first_diff_index)
+
+    if first_diff_index is None:
+        _logger.debug("Same partial tokens")
+        return text
+
+    i = _final_token_index + 1 + first_diff_index
+
+    _logger.debug("i=%s", i)
 
     # Вдруг, последние предыдущие токены - это часть команды, и только сейчас пришли завершающие токены этой команды?
     # А по ним уже действия оформились. Надо бы эти действия значит откатить, и собрать по новой из освободившихся токенов.
-    max_one_side_tokens = _MAX_COMMAND_WORDS - 1
-    if i >= max_one_side_tokens:
-        i -= max_one_side_tokens
+    max_one_side_tokens = max(0, _MAX_COMMAND_WORDS - 1)
+
+    _logger.debug("_MAX_COMMAND_WORDS=%s, max_one_side_tokens=%s", _MAX_COMMAND_WORDS, max_one_side_tokens)
+
+    if max_one_side_tokens > 0 and i > 0:
+        if i > max_one_side_tokens:
+            i -= max_one_side_tokens
+        else:
+            i = 0
+
+    _logger.debug("i=%s", i)
 
     # Откатываем действия.
-    first_discarded_action_index = _token_index_to_text_action_index[i]
+    first_discarded_action_index = _token_index_to_text_action_index.get(i)
+
+    _logger.debug("first_discarded_action_index=%s", first_discarded_action_index)
+
     if first_discarded_action_index is not None:
         first_discarded_action = _text_actions[first_discarded_action_index]
         # Токены будем применять с первого токена первого удаленного действия
-        i = first_discarded_action.raw_tokens_indexes[1]
+        i = first_discarded_action.raw_tokens_indexes[0]
         del _text_actions[first_discarded_action_index:]
 
     _, last_visible_addition = _get_last_visible_text_addition()
@@ -202,7 +224,7 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
             command_candidate_words = tuple(_all_tokens[i: i + _MAX_COMMAND_WORDS])
             substitute = None
             while len(command_candidate_words) > 0:
-                substitute = _word_combination_to_smart_token[command_candidate_words]
+                substitute = _word_combination_to_smart_token.get(command_candidate_words)
                 if substitute:
                     break
                 command_candidate_words = command_candidate_words[:-1]
@@ -246,7 +268,8 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
             space_or_empty = " " if need_space else ""
 
             # Новая версия текста
-            new_text = last_visible_addition.text + space_or_empty + token
+            prev_text = last_visible_addition.text if last_visible_addition else ""
+            new_text = prev_text + space_or_empty + token
             new_text_action = _AdditionTextAction(
                 raw_tokens_indexes=raw_tokens_indexes,
                 addition=token,
@@ -269,14 +292,14 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
         i += len(new_text_action.raw_tokens_indexes)
 
-    tokens_to_text_builder_text = last_visible_addition.text if last_visible_addition else ""
+    text = last_visible_addition.text if last_visible_addition else ""
 
     # todo А это нужно? Или Яндекс и так это делает за нас?
     # new_raw_tokens = replace_russian_numbers(new_raw_tokens)
 
     _logger.debug(">>>")
     _logger.debug(">>>")
-    _logger.debug(tokens_to_text_builder_text)
+    _logger.debug(text)
     _logger.debug(">>>")
     _logger.debug(">>>")
 
@@ -286,13 +309,13 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
     else:
         _prev_partial_tokens = new_raw_tokens
 
-    return tokens_to_text_builder_text
+    return text
 
 
-def tokens_to_text_builder_reset():
-    global tokens_to_text_builder_text, _final_token_index
+def reset():
+    global text, _final_token_index
 
-    tokens_to_text_builder_text = ""
+    text = ""
     _all_tokens.clear()
     _final_token_index = -1
     _prev_partial_tokens.clear()
