@@ -106,8 +106,8 @@ _add_smart_token(_SYNTAX_LEAN_LEFT, ")", "закрывающая скобка", 
 _add_smart_token(None, "\"", "кавычки")
 
 _add_smart_token(_SYNTAX_LEAN_BOTH, "-", "дефис")
-_add_smart_token(_SYNTAX_LEAN_BOTH, "/", "слэш")
-_add_smart_token(_SYNTAX_LEAN_BOTH, "\\", "обратный слэш")
+_add_smart_token(_SYNTAX_LEAN_BOTH, "/", "слэш", "слеш")
+_add_smart_token(_SYNTAX_LEAN_BOTH, "\\", "обратный слэш", "обратный слеш")
 _add_smart_token(_SYNTAX_LEAN_BOTH, " ", "пробел")
 
 _add_smart_token(_SYNTAX_LEAN_NONE, "-", "тире")
