@@ -1,2 +1,3 @@
-".\.venv\Scripts\python.exe" src/app/main.py
+set PYTHONPATH=src
+.\.venv\Scripts\python.exe -m app.main
 pause

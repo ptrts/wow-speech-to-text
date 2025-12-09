@@ -4,7 +4,7 @@ import json
 import queue
 import time
 from ctypes import wintypes
-from pathlib import Path
+from importlib import resources
 import threading
 import win32clipboard as cb
 import win32con
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ================== НАСТРОЙКИ ==================
 
 # Папка, где лежит текущий .py файл
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = resources.files("resources")
 
 # путь к распакованной русской модели Vosk
 
