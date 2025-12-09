@@ -27,20 +27,22 @@ class _SentenceState:
 
 
 class _TextAction:
-    def __init__(self, raw_tokens_indexes: tuple[int, ...]):
-        self.raw_tokens_indexes = raw_tokens_indexes
+    def __init__(self, raw_token_index: int):
+        self.raw_token_index = raw_token_index
 
 
 class _AdditionTextAction(_TextAction):
     def __init__(
             self,
-            raw_tokens_indexes: tuple[int, ...],
+            raw_token_index: int,
+            base_action_index: int,
             addition: str,
             syntax_rules: _SyntaxRules,
             sentence_state: _SentenceState,
             text_version: str,
     ):
-        super().__init__(raw_tokens_indexes)
+        super().__init__(raw_token_index)
+        self.base_action_index = base_action_index
         self.addition = addition
         self.syntax_rules = syntax_rules
         self.sentence_state = sentence_state
@@ -50,10 +52,10 @@ class _AdditionTextAction(_TextAction):
 class _RemovalTextAction(_TextAction):
     def __init__(
             self,
-            raw_tokens_indexes: tuple[int, ...],
+            raw_token_index: int,
             base_action_index: int,
     ):
-        super().__init__(raw_tokens_indexes)
+        super().__init__(raw_token_index)
         self.base_action_index = base_action_index
 
 
@@ -163,35 +165,12 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
     _logger.debug("i=%s", i)
 
-    # Вдруг, последние предыдущие токены - это часть команды, и только сейчас пришли завершающие токены этой команды?
-    # А по ним уже действия оформились. Надо бы эти действия значит откатить, и собрать по новой из освободившихся токенов.
-    max_one_side_tokens = max(0, _MAX_COMMAND_WORDS - 1)
-
-    _logger.debug("_MAX_COMMAND_WORDS=%s, max_one_side_tokens=%s", _MAX_COMMAND_WORDS, max_one_side_tokens)
-
-    if max_one_side_tokens > 0 and i > 0:
-        if i > max_one_side_tokens:
-            i -= max_one_side_tokens
-        else:
-            i = 0
-
-    _logger.debug("i=%s", i)
-
-    # Откатываем действия.
+    # Отбрасывание действий тех токенов, которые не пришли в этот раз.
     first_discarded_action_index = _token_index_to_text_action_index.get(i)
-
     _logger.debug("first_discarded_action_index=%s", first_discarded_action_index)
-
     if first_discarded_action_index is not None:
-        first_discarded_action = _text_actions[first_discarded_action_index]
-        # Токены будем применять с первого токена первого удаленного действия
-        i = first_discarded_action.raw_tokens_indexes[0]
         del _text_actions[first_discarded_action_index:]
 
-    _, last_visible_addition = _get_last_visible_text_addition()
-    last_addition_sentence_state = last_visible_addition.sentence_state if last_visible_addition else _SentenceState(open_quote=False, new_sentence=True)
-
-    # Вот он этот наш самый главный цикл
     while i < len(_all_tokens):
 
         # Достаем текущий сырой токен
@@ -200,72 +179,70 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
         if token == "удалить":
             # Какое сейчас последнее видимое добавление?
+            # Будем откатывать до базовой версии этого видимого добавления
             last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition()
             if last_visible_addition_index >= 0:
-                # А когда мы его откатим, тогда какое будет последнее видимое добавление?
-                last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition(last_visible_addition_index - 1)
+                base_action_index = last_visible_addition.base_action_index
             else:
-                # Последнего видимого добавления нет. Это значит, что видимый текст пустой
-                pass
+                base_action_index = -1
 
             new_text_action = _RemovalTextAction(
-                raw_tokens_indexes=(i,),
-                base_action_index=last_visible_addition_index,
+                raw_token_index=i,
+                base_action_index=base_action_index,
             )
         elif token == "очистить":
             new_text_action = _RemovalTextAction(
-                raw_tokens_indexes=(i,),
+                raw_token_index=i,
                 base_action_index=-1,
             )
         else:
             # Добавление к тексту
 
-            command_start = -1
-            command_end = -1
-            command_candidate_words = None
-            substitute = None
-            for command_words_number in range(_MAX_COMMAND_WORDS, 0, -1):
-                max_command_words_before_number = command_words_number - 1
-                for command_words_before_number in range(max_command_words_before_number, -1, -1):
-                    command_start = i - command_words_before_number
-                    if command_start < 0:
-                        continue
-                    command_words_after_number = command_words_number - command_words_before_number - 1
-                    command_end = i + command_words_after_number
-                    command_candidate_words = tuple(_all_tokens[command_start: command_end + 1])
+            # Идем назад, ищем видимые токены, чтоб по ним потом смотреть, нет ли таких многословных команд
+            command_words_before_max = _MAX_COMMAND_WORDS - 1
+            visible_additions = [None]
+            command_candidate_words = [token]
+            text_action_index = len(_text_actions) - 1
+            while len(visible_additions) < command_words_before_max:
+                last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition(text_action_index)
+                if last_visible_addition:
 
-                    substitute = _word_combination_to_smart_token.get(command_candidate_words)
-                    if substitute:
-                        break
-                if substitute:
+                    visible_additions.insert(0, last_visible_addition)
+
+                    candidate_word_token_index = last_visible_addition.raw_token_index
+                    candidate_word_token = _all_tokens[candidate_word_token_index]
+                    command_candidate_words.insert(0, candidate_word_token)
+
+                    text_action_index = last_visible_addition_index - 1
+                else:
                     break
 
-            pass
-
-
-
-
-
-
-
-
-            # Может быть это команда?
-            command_candidate_words = tuple(_all_tokens[i: i + _MAX_COMMAND_WORDS])
+            # Используем найденные токены для поиска команд разной длины.
+            # Начинаем от самых длинных команд.
             substitute = None
             while len(command_candidate_words) > 0:
-                substitute = _word_combination_to_smart_token.get(command_candidate_words)
+                substitute = _word_combination_to_smart_token.get(tuple(command_candidate_words))
                 if substitute:
                     break
-                command_candidate_words = command_candidate_words[:-1]
+                del visible_additions[0]
+                del command_candidate_words[0]
 
             if substitute:
+                first_token_addition = visible_additions[0]
+                if first_token_addition is None:
+                    # Значит, первый токен - это текущий токен, по которому действие еще не создано.
+                    # Это значит, что мы должны базироваться на последнем действии, какое есть.
+                    base_action_index = len(_text_actions) - 1
+                else:
+                    base_action_index = first_token_addition.base_action_index
                 token = substitute.text
                 syntax_rules = substitute.syntax_rules
-                raw_tokens_number = len(command_candidate_words)
             else:
+                base_action_index = len(_text_actions) - 1
                 syntax_rules = _SYNTAX_WORD
-                raw_tokens_number = 1
-            raw_tokens_indexes = tuple(range(i, i + raw_tokens_number))
+
+            _, last_visible_addition = _get_last_visible_text_addition(base_action_index)
+            last_addition_sentence_state = last_visible_addition.sentence_state if last_visible_addition else _SentenceState(open_quote=False, new_sentence=True)
 
             # Наследуем объект состояния как мы его оставим после себя
             # от
@@ -300,7 +277,8 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
             prev_text = last_visible_addition.text_version if last_visible_addition else ""
             new_text = prev_text + space_or_empty + token
             new_text_action = _AdditionTextAction(
-                raw_tokens_indexes=raw_tokens_indexes,
+                raw_token_index=i,
+                base_action_index=base_action_index,
                 addition=token,
                 syntax_rules=syntax_rules,
                 sentence_state=this_addition_sentence_state,
@@ -309,18 +287,15 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
         _text_actions.append(new_text_action)
 
-        _, last_visible_addition = _get_last_visible_text_addition()
-        last_addition_sentence_state = last_visible_addition.sentence_state if last_visible_addition else _SentenceState(open_quote=False, new_sentence=True)
-
         # Записываем связь от сырых токенов к версии
         this_version_index = len(_text_actions) - 1
-        for token_index in new_text_action.raw_tokens_indexes:
-            _token_index_to_text_action_index[token_index] = this_version_index
+        _token_index_to_text_action_index[new_text_action.raw_token_index] = this_version_index
 
         _logger.debug("new_text_action=%s", new_text_action)
 
-        i += len(new_text_action.raw_tokens_indexes)
+        i += 1
 
+    _, last_visible_addition = _get_last_visible_text_addition()
     text = last_visible_addition.text_version if last_visible_addition else ""
 
     # todo А это нужно? Или Яндекс и так это делает за нас?
