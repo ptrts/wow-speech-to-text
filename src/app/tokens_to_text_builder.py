@@ -199,11 +199,10 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
             # Добавление к тексту
 
             # Идем назад, ищем видимые токены, чтоб по ним потом смотреть, нет ли таких многословных команд
-            command_words_before_max = _MAX_COMMAND_WORDS - 1
             visible_additions = [None]
             command_candidate_words = [token]
             text_action_index = len(_text_actions) - 1
-            while len(visible_additions) < command_words_before_max:
+            while len(visible_additions) < _MAX_COMMAND_WORDS:
                 last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition(text_action_index)
                 if last_visible_addition:
 
