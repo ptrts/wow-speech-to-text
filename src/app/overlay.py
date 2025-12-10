@@ -8,6 +8,8 @@ import win32api
 # ===== Глобальное состояние оверлея =====
 
 CURRENT_TEXT = ("", "")
+TOP_TEXT = ""
+BOTTOM_TEXT = ""
 HWND = None
 H_FONT = None  # сюда положим большой шрифт
 
@@ -16,15 +18,24 @@ WM_UPDATE_TEXT = win32con.WM_USER + 1
 
 # ===== Публичные функции для использования из других модулей =====
 
-def show_text(text_1: str, text_2: str, duration: float | None = None):
+def show_text(
+    text_1: str,
+    text_2: str,
+    duration: float | None = None,
+    top_text: str = "",
+    bottom_text: str = "",
+):
     """
     Показать текст на оверлее.
     duration (сек) — если задано, через это время текст исчезнет.
+    top_text / bottom_text — дополнительные строки над и под основной разноцветной строкой.
     Можно вызывать из любого потока.
     """
-    global CURRENT_TEXT
+    global CURRENT_TEXT, TOP_TEXT, BOTTOM_TEXT
 
     CURRENT_TEXT = (text_1, text_2)
+    TOP_TEXT = top_text
+    BOTTOM_TEXT = bottom_text
 
     if HWND:
         # попросим окно перерисоваться
@@ -40,8 +51,26 @@ def show_text(text_1: str, text_2: str, duration: float | None = None):
 
 def clear_text():
     """Стереть текст (сделать оверлей пустым)."""
-    global CURRENT_TEXT
+    global CURRENT_TEXT, TOP_TEXT, BOTTOM_TEXT
     CURRENT_TEXT = ("", "")
+    TOP_TEXT = ""
+    BOTTOM_TEXT = ""
+    if HWND:
+        win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
+
+
+def set_top_text(text: str):
+    """Задать дополнительную строку над основной."""
+    global TOP_TEXT
+    TOP_TEXT = text
+    if HWND:
+        win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
+
+
+def set_bottom_text(text: str):
+    """Задать дополнительную строку под основной."""
+    global BOTTOM_TEXT
+    BOTTOM_TEXT = text
     if HWND:
         win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
 
@@ -49,7 +78,7 @@ def clear_text():
 # ===== Оконная процедура =====
 
 def wnd_proc(hwnd, msg, wparam, lparam):
-    global CURRENT_TEXT, H_FONT
+    global CURRENT_TEXT, H_FONT, TOP_TEXT, BOTTOM_TEXT
 
     if msg == win32con.WM_PAINT:
         hdc, ps = win32gui.BeginPaint(hwnd)
@@ -66,8 +95,10 @@ def wnd_proc(hwnd, msg, wparam, lparam):
             else:
                 green_text, red_text = CURRENT_TEXT, ""
             full_text = (green_text or "") + (red_text or "")
+            top_text = TOP_TEXT or ""
+            bottom_text = BOTTOM_TEXT or ""
 
-            if full_text:
+            if full_text or top_text or bottom_text:
                 if H_FONT is None:
                     logfont = win32gui.LOGFONT()
                     logfont.lfHeight = -32
@@ -86,8 +117,27 @@ def wnd_proc(hwnd, msg, wparam, lparam):
                 client_w = right - left
                 client_h = bottom - top
 
-                # ширина/высота всей строки
-                full_w, full_h = win32gui.GetTextExtentPoint32(hdc, full_text)
+                line_spacing = 6
+
+                def draw_centered(text: str, color: int, y_coord: int):
+                    text_w, text_h = win32gui.GetTextExtentPoint32(hdc, text)
+                    text_x = left + (client_w - text_w) // 2
+                    text_rect = (text_x, y_coord, text_x + text_w, y_coord + text_h)
+                    win32gui.SetTextColor(hdc, color)
+                    win32gui.DrawText(
+                        hdc,
+                        text,
+                        -1,
+                        text_rect,
+                        win32con.DT_LEFT
+                        | win32con.DT_TOP
+                        | win32con.DT_SINGLELINE,
+                    )
+                    return text_h
+
+                # ширина/высота основной строки (используем пробел, чтобы узнать высоту)
+                base_text = full_text if full_text else " "
+                full_w, full_h = win32gui.GetTextExtentPoint32(hdc, base_text)
 
                 # точка старта, чтобы центрировать текст
                 x = left + (client_w - full_w) // 2
@@ -96,33 +146,41 @@ def wnd_proc(hwnd, msg, wparam, lparam):
                 # прямоугольник под всю строку
                 full_rect = (x, y, x + full_w, y + full_h)
 
-                # 1) весь текст красным
-                win32gui.SetTextColor(hdc, win32api.RGB(255, 0, 0))
-                win32gui.DrawText(
-                    hdc,
-                    full_text,
-                    -1,
-                    full_rect,
-                    win32con.DT_LEFT
-                    | win32con.DT_TOP
-                    | win32con.DT_SINGLELINE,
-                    )
-
-                # 2) поверх — зелёный префикс
-                if green_text:
-                    green_w, _ = win32gui.GetTextExtentPoint32(hdc, green_text)
-                    green_rect = (x, y, x + green_w, y + full_h)
-
-                    win32gui.SetTextColor(hdc, win32api.RGB(0, 255, 0))
+                if full_text:
+                    # 1) весь текст красным
+                    win32gui.SetTextColor(hdc, win32api.RGB(255, 0, 0))
                     win32gui.DrawText(
                         hdc,
-                        green_text,
+                        full_text,
                         -1,
-                        green_rect,
+                        full_rect,
                         win32con.DT_LEFT
                         | win32con.DT_TOP
                         | win32con.DT_SINGLELINE,
                         )
+
+                    # 2) поверх — зелёный префикс
+                    if green_text:
+                        green_w, _ = win32gui.GetTextExtentPoint32(hdc, green_text)
+                        green_rect = (x, y, x + green_w, y + full_h)
+
+                        win32gui.SetTextColor(hdc, win32api.RGB(0, 255, 0))
+                        win32gui.DrawText(
+                            hdc,
+                            green_text,
+                            -1,
+                            green_rect,
+                            win32con.DT_LEFT
+                            | win32con.DT_TOP
+                            | win32con.DT_SINGLELINE,
+                            )
+
+                if top_text:
+                    draw_centered(top_text, win32api.RGB(255, 255, 255), y - full_h - line_spacing)
+
+                if bottom_text:
+                    bottom_y = y + full_h + line_spacing
+                    draw_centered(bottom_text, win32api.RGB(255, 255, 255), bottom_y)
 
                 win32gui.SelectObject(hdc, old_font)
 
