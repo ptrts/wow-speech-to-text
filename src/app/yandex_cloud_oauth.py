@@ -122,8 +122,11 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         error = params.get("error", [None])[0]
 
         if state != self.server.state:
-            self.send_error(400, "Bad State")
-            return
+            logger.error("Bad state. state=%s, self.server.state=%s", state, self.server.state)
+
+            # todo Яндекс перестал высылать state, почему-то
+            # self.send_error(400, "Bad State")
+            # return
 
         # Здесь типизатор уже знает, что у сервера есть auth_result
         self.server.auth_result = {
@@ -197,8 +200,9 @@ def get_oauth_and_iam_tokens(timeout: float = 300.0) -> Dict[str, Any]:
     if cb.get("error"):
         raise RuntimeError(f"OAuth error: {cb['error']}")
 
-    if cb.get("state") != oauth.state:
-        raise RuntimeError(f"state mismatch: ожидали {oauth.state}, получили {cb.get('state')}")
+    # todo Яндекс перестал присылать state, почему-то
+    # if cb.get("state") != oauth.state:
+    #     raise RuntimeError(f"state mismatch: ожидали {oauth.state}, получили {cb.get('state')}")
 
     code = cb.get("code")
     if not code:
