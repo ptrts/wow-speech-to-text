@@ -338,8 +338,9 @@ def handle_text(partial_text: str, is_final: bool):
         refresh_overlay()
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
-        tokens_to_text_builder.build_text(tokens, is_final)
+        tokens_to_text_builder.build_text(tokens, True)
         refresh_overlay()
+        stop_recognize()
         if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
@@ -402,13 +403,18 @@ def on_idle():
 def to_idle():
     global recognize_thread, recognize_thread_stop_event
     logger.info("start")
+    stop_recognize()
+    set_state("idle", on_idle)
+
+
+def stop_recognize():
+    global recognize_thread, recognize_thread_stop_event
     if recognize_thread:
         logger.info("recognize_thread is set. Stopping the thread")
         recognize_thread_stop_event.set()
         recognize_thread = None
     else:
         logger.info("recognize_thread is not set")
-    set_state("idle", on_idle)
 
 
 def handle_text_idle(partial_text: str):

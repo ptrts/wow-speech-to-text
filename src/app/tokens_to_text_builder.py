@@ -1,6 +1,8 @@
 from __future__ import annotations
 import copy
 from typing import cast
+from itertools import takewhile
+from rus2num import Rus2Num
 
 from app.app_logging import logging
 
@@ -10,6 +12,7 @@ _logger = logging.getLogger(__name__)
 
 __all__ = ["text", "build_text", "reset"]
 
+_rus_2_num = Rus2Num()
 
 text: str = ""
 final_text: str = ""
@@ -140,6 +143,18 @@ def _get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, 
         else:
             raise TypeError(f"Unexpected subclass {type(action).__name__}")
     return j, None
+
+
+def common_prefix_len(a: str, b: str) -> int:
+    return sum(
+        1
+        for _ in takewhile(lambda p: p[0] == p[1], zip(a, b))
+    )
+
+
+def common_prefix(a: str, b: str) -> str:
+    n = common_prefix_len(a, b)
+    return a[:n]
 
 
 def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
@@ -313,26 +328,33 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
         "last_visible_addition_index=%s, last_visible_addition.raw_token_index=%s",
         last_visible_addition_index, last_visible_token_index)
 
-    final_text = ""
-    if 0 <= _final_token_index < last_visible_token_index:
+    if _final_token_index < 0:
+        final_text = ""
+    elif _final_token_index < last_visible_token_index:
         _logger.debug("Будем искать финальное действие...")
         # Не весь текст финальный. Нужно найти видимое действие, завершающее финальный текст
         while True:
             k = last_visible_addition_index - 1
             last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition(k)
-            last_visible_token_index = last_visible_addition.raw_token_index if last_visible_addition else -1
-            if 0 <= last_visible_token_index <= _final_token_index:
+            if not last_visible_addition:
+                final_text = ""
+                break
+            last_visible_token_index = last_visible_addition.raw_token_index
+            if last_visible_token_index <= _final_token_index:
                 # Мы нашли видимое действие, которое финальное.
                 final_text = last_visible_addition.text_version
-                non_final_text = text[len(final_text):]
                 break
     else:
         final_text = text
-        non_final_text = ""
         _logger.debug("Не будем искать финальное действие")
 
-    # todo А это нужно? Или Яндекс и так это делает за нас?
-    # new_raw_tokens = replace_russian_numbers(new_raw_tokens)
+    if text:
+        normalized_text = _rus_2_num(text)
+        text = normalized_text
+        if final_text:
+            normalized_final_text = _rus_2_num(final_text)
+            final_text = common_prefix(normalized_final_text, normalized_text)
+    non_final_text = text[len(final_text):]
 
     _logger.debug(">>>")
     _logger.debug(">>>")
