@@ -262,7 +262,7 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     time.sleep(KEY_DELAY)
 
     if not keyboard_is_clean():
-        overlay_line_2 = "... Отпускай!"
+        overlay_line_2 = "Отпускай!"
     refresh_overlay()
 
     still_clean = wait_for_keyboard_clean()
@@ -291,13 +291,7 @@ def refresh_overlay():
     if state == "recording":
         text_1 = f"{chat_channel} {tokens_to_text_builder.final_text}"
         text_2 = tokens_to_text_builder.non_final_text
-        if overlay_line_2:
-            if text_2:
-                text_2 += overlay_line_2
-            else:
-                text_1 += overlay_line_2
-
-        show_text(text_1, text_2)
+        show_text(text_1, text_2, bottom_text=overlay_line_2)
     else:
         clear_text()
 

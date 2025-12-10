@@ -176,11 +176,11 @@ def wnd_proc(hwnd, msg, wparam, lparam):
                             )
 
                 if top_text:
-                    draw_centered(top_text, win32api.RGB(255, 255, 255), y - full_h - line_spacing)
+                    draw_centered(top_text, win32api.RGB(200, 0, 255), y - full_h - line_spacing)
 
                 if bottom_text:
                     bottom_y = y + full_h + line_spacing
-                    draw_centered(bottom_text, win32api.RGB(255, 255, 255), bottom_y)
+                    draw_centered(bottom_text, win32api.RGB(200, 0, 255), bottom_y)
 
                 win32gui.SelectObject(hdc, old_font)
 
