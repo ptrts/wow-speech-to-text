@@ -12,6 +12,8 @@ __all__ = ["text", "build_text", "reset"]
 
 
 text: str = ""
+final_text: str = ""
+non_final_text: str = ""
 
 _all_tokens: list[str] = []
 _final_token_index: int = -1
@@ -141,7 +143,7 @@ def _get_last_visible_text_addition(max_index: int | None = None) -> tuple[int, 
 
 
 def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
-    global text, _all_tokens, _final_token_index, _prev_partial_tokens
+    global text, final_text, non_final_text, _all_tokens, _final_token_index, _prev_partial_tokens
 
     _logger.debug(
         "_all_tokens=%s, _final_token_index=%s, _prev_partial_tokens=%s, new_raw_tokens=%s, is_final=%s",
@@ -295,8 +297,39 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
         i += 1
 
-    _, last_visible_addition = _get_last_visible_text_addition()
+    if is_final:
+        _final_token_index = len(_all_tokens) - 1
+        _prev_partial_tokens.clear()
+    else:
+        _prev_partial_tokens = new_raw_tokens
+
+    _logger.debug("_final_token_index=%s", _final_token_index)
+
+    last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition()
     text = last_visible_addition.text_version if last_visible_addition else ""
+    last_visible_token_index = last_visible_addition.raw_token_index if last_visible_addition else -1
+
+    _logger.debug(
+        "last_visible_addition_index=%s, last_visible_addition.raw_token_index=%s",
+        last_visible_addition_index, last_visible_token_index)
+
+    final_text = ""
+    if 0 <= _final_token_index < last_visible_token_index:
+        _logger.debug("Будем искать финальное действие...")
+        # Не весь текст финальный. Нужно найти видимое действие, завершающее финальный текст
+        while True:
+            k = last_visible_addition_index - 1
+            last_visible_addition_index, last_visible_addition = _get_last_visible_text_addition(k)
+            last_visible_token_index = last_visible_addition.raw_token_index if last_visible_addition else -1
+            if 0 <= last_visible_token_index <= _final_token_index:
+                # Мы нашли видимое действие, которое финальное.
+                final_text = last_visible_addition.text_version
+                non_final_text = text[len(final_text):]
+                break
+    else:
+        final_text = text
+        non_final_text = ""
+        _logger.debug("Не будем искать финальное действие")
 
     # todo А это нужно? Или Яндекс и так это делает за нас?
     # new_raw_tokens = replace_russian_numbers(new_raw_tokens)
@@ -304,14 +337,10 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
     _logger.debug(">>>")
     _logger.debug(">>>")
     _logger.debug(text)
+    _logger.debug(final_text)
+    _logger.debug(non_final_text.strip())
     _logger.debug(">>>")
     _logger.debug(">>>")
-
-    if is_final:
-        _final_token_index = len(_all_tokens) - 1
-        _prev_partial_tokens.clear()
-    else:
-        _prev_partial_tokens = new_raw_tokens
 
     return text
 

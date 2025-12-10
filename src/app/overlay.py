@@ -7,7 +7,7 @@ import win32api
 
 # ===== Глобальное состояние оверлея =====
 
-CURRENT_TEXT = ""
+CURRENT_TEXT = ("", "")
 HWND = None
 H_FONT = None  # сюда положим большой шрифт
 
@@ -16,7 +16,7 @@ WM_UPDATE_TEXT = win32con.WM_USER + 1
 
 # ===== Публичные функции для использования из других модулей =====
 
-def show_text(message: str, duration: float | None = None):
+def show_text(text_1: str, text_2: str, duration: float | None = None):
     """
     Показать текст на оверлее.
     duration (сек) — если задано, через это время текст исчезнет.
@@ -24,7 +24,7 @@ def show_text(message: str, duration: float | None = None):
     """
     global CURRENT_TEXT
 
-    CURRENT_TEXT = message
+    CURRENT_TEXT = (text_1, text_2)
 
     if HWND:
         # попросим окно перерисоваться
@@ -41,7 +41,7 @@ def show_text(message: str, duration: float | None = None):
 def clear_text():
     """Стереть текст (сделать оверлей пустым)."""
     global CURRENT_TEXT
-    CURRENT_TEXT = ""
+    CURRENT_TEXT = ("", "")
     if HWND:
         win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
 
@@ -56,39 +56,73 @@ def wnd_proc(hwnd, msg, wparam, lparam):
         try:
             rect = win32gui.GetClientRect(hwnd)
 
-            # Фон заливаем "волшебным" цветом (чёрный), который станет прозрачным
+            # фон заполняем как и раньше
             brush = win32gui.GetStockObject(win32con.BLACK_BRUSH)
             win32gui.FillRect(hdc, rect, brush)
 
-            if CURRENT_TEXT:
-                # Создаём большой шрифт один раз, через LOGFONT + CreateFontIndirect
+            # --- поддержка и старого и нового формата CURRENT_TEXT ---
+            if isinstance(CURRENT_TEXT, tuple):
+                green_text, red_text = CURRENT_TEXT
+            else:
+                green_text, red_text = CURRENT_TEXT, ""
+            full_text = (green_text or "") + (red_text or "")
+
+            if full_text:
                 if H_FONT is None:
                     logfont = win32gui.LOGFONT()
-                    logfont.lfHeight = -32  # размер шрифта (по модулю больше → крупнее)
+                    logfont.lfHeight = -32
                     logfont.lfWeight = win32con.FW_BOLD
                     logfont.lfCharSet = win32con.DEFAULT_CHARSET
                     logfont.lfQuality = win32con.DEFAULT_QUALITY
                     logfont.lfPitchAndFamily = win32con.DEFAULT_PITCH | win32con.FF_DONTCARE
-                    # Имя шрифта (можно 'Arial', 'Tahoma', 'Consolas', и т.п.)
                     logfont.lfFaceName = "Segoe UI"
-
                     H_FONT = win32gui.CreateFontIndirect(logfont)
 
                 old_font = win32gui.SelectObject(hdc, H_FONT)
 
                 win32gui.SetBkMode(hdc, win32con.TRANSPARENT)
-                # Цвет текста — ЯРКИЙ, НЕ чёрный (иначе сольётся с colorkey)
-                win32gui.SetTextColor(hdc, win32api.RGB(0, 255, 0))
 
+                left, top, right, bottom = rect
+                client_w = right - left
+                client_h = bottom - top
+
+                # ширина/высота всей строки
+                full_w, full_h = win32gui.GetTextExtentPoint32(hdc, full_text)
+
+                # точка старта, чтобы центрировать текст
+                x = left + (client_w - full_w) // 2
+                y = top + (client_h - full_h) // 2
+
+                # прямоугольник под всю строку
+                full_rect = (x, y, x + full_w, y + full_h)
+
+                # 1) весь текст красным
+                win32gui.SetTextColor(hdc, win32api.RGB(255, 0, 0))
                 win32gui.DrawText(
                     hdc,
-                    CURRENT_TEXT,
+                    full_text,
                     -1,
-                    rect,
-                    win32con.DT_CENTER
-                    | win32con.DT_VCENTER
+                    full_rect,
+                    win32con.DT_LEFT
+                    | win32con.DT_TOP
                     | win32con.DT_SINGLELINE,
                     )
+
+                # 2) поверх — зелёный префикс
+                if green_text:
+                    green_w, _ = win32gui.GetTextExtentPoint32(hdc, green_text)
+                    green_rect = (x, y, x + green_w, y + full_h)
+
+                    win32gui.SetTextColor(hdc, win32api.RGB(0, 255, 0))
+                    win32gui.DrawText(
+                        hdc,
+                        green_text,
+                        -1,
+                        green_rect,
+                        win32con.DT_LEFT
+                        | win32con.DT_TOP
+                        | win32con.DT_SINGLELINE,
+                        )
 
                 win32gui.SelectObject(hdc, old_font)
 
@@ -172,7 +206,7 @@ def _overlay_thread():
     # Для проверки: показываем тестовый текст
     def demo():
         time.sleep(1)
-        show_text("Overlay OK (LOGFONT)", duration=1)
+        show_text("Overlay OK (LOGFONT)", "", duration=1)
 
     threading.Thread(target=demo, daemon=True).start()
 
