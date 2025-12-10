@@ -352,8 +352,14 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
         normalized_text = _rus_2_num(text)
         text = normalized_text
         if final_text:
-            normalized_final_text = _rus_2_num(final_text)
-            final_text = common_prefix(normalized_final_text, normalized_text)
+            first_number_index = common_prefix_len(normalized_text, text)
+            if first_number_index > len(final_text):
+                # final_text оставляем как есть, там нет цифр
+                pass
+            else:
+                # В final_text уже должны быть какие-то цифры
+                normalized_final_text = _rus_2_num(final_text)
+                final_text = common_prefix(normalized_final_text, normalized_text)
     non_final_text = text[len(final_text):]
 
     _logger.debug(">>>")
