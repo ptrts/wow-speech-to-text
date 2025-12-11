@@ -12,6 +12,7 @@ sound_queue = queue.Queue()
 SOUND_MAP = {
     "editing_cancelled": ("beep", (110, 300)),
     # "idle":              ("beep", (220, 300)),
+    # "pause":             ("beep", (220, 300)),
     "recording":         ("beep", (330, 300)),
     "sending_started":   ("beep", (440, 300)),
     "sending_complete":  ("beep", (550, 300)),

@@ -8,6 +8,8 @@ from importlib import resources
 import threading
 import win32clipboard as cb
 import win32con
+from typing import NamedTuple
+from collections.abc import Generator
 
 import pyautogui
 import sounddevice as sd
@@ -20,6 +22,8 @@ from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
 from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
 from app.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
 import app.tokens_to_text_builder as tokens_to_text_builder
+import app.state
+import app.commands
 
 from app.app_logging import logging, TRACE
 
@@ -56,10 +60,7 @@ KEY_DELAY = 0.05  # секунды
 
 # ================== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ==================
 
-state = "idle"  # "idle" | "timer" | "recording"
-chat_channel: str | None = None
 prev_partial_text: str | None = None
-overlay_line_2: str | None = None
 
 recognize_thread: threading.Thread | None = None
 recognize_thread_stop_event: threading.Event | None = None
@@ -244,8 +245,6 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
       Enter, печать "/bg <текст>" как Unicode, Enter.
     """
 
-    global overlay_line_2
-
     text = text.strip()
     if not text:
         logger.info("Пустой текст, не отправляем")
@@ -262,12 +261,12 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     time.sleep(KEY_DELAY)
 
     if not keyboard_is_clean():
-        overlay_line_2 = "Отпускай!"
+        app.state.overlay_line_bottom = "Отпускай!"
     refresh_overlay()
 
     still_clean = wait_for_keyboard_clean()
 
-    overlay_line_2 = None
+    app.state.overlay_line_bottom = None
     refresh_overlay()
 
     if not still_clean:
@@ -288,16 +287,16 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
 
 
 def refresh_overlay():
-    if state == "recording":
-        text_1 = f"{chat_channel} {tokens_to_text_builder.final_text}"
+    if app.state.state == "recording":
+        text_1 = f"{app.state.chat_channel} {tokens_to_text_builder.final_text}"
         text_2 = tokens_to_text_builder.non_final_text
-        show_text(text_1, text_2, bottom_text=overlay_line_2)
+        show_text(text_1, text_2, bottom_text=app.state.overlay_line_bottom)
     else:
         clear_text()
 
 
 def handle_text(partial_text: str, is_final: bool):
-    global prev_partial_text, chat_channel
+    global prev_partial_text
 
     partial_text = partial_text.strip().lower()
     if not partial_text:
@@ -338,7 +337,7 @@ def handle_text(partial_text: str, is_final: bool):
         if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
-            send_to_wow_chat(chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
+            send_to_wow_chat(app.state.chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
             play_sound("sending_complete")
         else:
             play_sound("sending_error")
@@ -351,30 +350,14 @@ def handle_text(partial_text: str, is_final: bool):
         to_idle()
 
 
-def on_schedule_state_timer(new_state, callback):
-    global state
-    old_state = state
-    state = new_state
-    if callback:
-        callback()
-    logger.debug("%s => %s", old_state, state)
-
-
-def set_state(new_state, callback=None):
-    global state
-    logger.debug(new_state)
-    state = "timer"
-    threading.Timer(0.2, on_schedule_state_timer, args=(new_state, callback)).start()
-
-
 def on_recognized_fragment(alternatives: list[str], is_final: bool):
-    if state == "recording":
+    if app.state.state == "recording":
         handle_text(alternatives[0], is_final)
 
 
 def on_recording():
     global recognize_thread, recognize_thread_stop_event
-    show_text(chat_channel, "")
+    show_text(app.state.chat_channel, "")
 
     recognize_thread_stop_event = threading.Event()
     recognize_thread = threading.Thread(
@@ -386,11 +369,11 @@ def on_recording():
 
 
 def on_idle():
-    global chat_channel, prev_partial_text, overlay_line_2
-    chat_channel = None
+    global prev_partial_text
+    app.state.chat_channel = None
     prev_partial_text = None
     tokens_to_text_builder.reset()
-    overlay_line_2 = None
+    app.state.overlay_line_bottom = None
     refresh_overlay()
 
 
@@ -411,32 +394,6 @@ def stop_recognize():
         logger.info("recognize_thread is not set")
 
 
-def handle_text_idle(partial_text: str):
-    global state, prev_partial_text, chat_channel
-
-    partial_text = partial_text.strip().lower()
-    if not partial_text:
-        return
-
-    if prev_partial_text is not None and partial_text == prev_partial_text:
-        logger.debug("Same partial")
-        return
-
-    prev_partial_text = partial_text
-
-    # Разбиваем текст частичного результата на слова
-    tokens = partial_text.split()
-    # Печатаем, какие слова там получились
-    logger.info("tokens=%s, state=%r", tokens, state)
-
-    # Если в idle нам попалась пачка слов со словом "запись" или аналогами, то включаем режим записи
-    start_command_position, start_command = next(((i, w) for i, w in enumerate(tokens) if w in ACTIVATE_WORDS), (None, None))
-    if start_command is not None:
-        chat_channel = f"/{ACTIVATE_WORD_TO_CHAT_CHANNEL[start_command]}"
-        set_state("recording", on_recording)
-        prev_partial_text = None
-
-
 # ================== АУДИОПОТОК И РАСПОЗНАВАНИЕ ==================
 
 # Наш обработчик данных от sounddevice
@@ -449,17 +406,29 @@ def audio_callback(indata, frames, time_info, status):
     q.put(bytes(indata))
 
 
-def idle_recognition_loop():
-    global state
+def init_audio_stream():
+    return sd.RawInputStream(
+        samplerate=SAMPLE_RATE,  # Частота дискретизации - 16 000 сэмплов в секунду
+        blocksize=BLOCK_SIZE,  # В одном блоке - 1600 сэмплов. Это - 0.1 секунды, т.к. частота дискретизации - 16 000 сэмплов в секунду
+        dtype='int16',  # Каждый сэмпл - это 16 бит.
+        channels=1,  # Один канал (моно)
+        callback=audio_callback  # Для обработки сэмплов использовать вот такой описанный нами выше обработчик
+    )
 
-    start_overlay()
 
-    idle_model = Model(str(IDLE_MODEL_PATH))
+class TextAndIsFinal(NamedTuple):
+    text: str
+    is_final: bool
+
+
+def get_command_recognizer_texts() -> Generator[TextAndIsFinal, None, None]:
+
+    model = Model(str(IDLE_MODEL_PATH))
     grammar = json.dumps(list(ACTIVATE_WORDS) + ["[unk]"], ensure_ascii=False)
 
-    def get_idle_recognizer():
+    def get_command_recognizer():
         # return recording_recognizer
-        return KaldiRecognizer(idle_model, SAMPLE_RATE, grammar)
+        return KaldiRecognizer(model, SAMPLE_RATE, grammar)
 
     # Теперь будем работать с микрофоном через модуль sounddevice (локально - sd).
     # Открываем сырой входящий поток звуковых данных.
@@ -476,17 +445,17 @@ def idle_recognition_loop():
 
     # И садимся в мертвый цикл
     while True:
-        if state != local_state:
-            local_state = state
+        if app.state.state != local_state:
+            local_state = app.state.state
 
             logger.debug("local_state=%s", local_state)
 
-            if local_state == "idle":
-                recognizer = get_idle_recognizer()
+            if local_state == "idle" or local_state == "pause":
+                recognizer = get_command_recognizer()
             else:
                 recognizer = None
 
-            if state == "idle":
+            if app.state.state in ("idle", "pause"):
                 play_sound(local_state)
 
         # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
@@ -504,18 +473,15 @@ def idle_recognition_loop():
 
         is_final = recognizer.AcceptWaveform(data)
 
-        if state == "idle":
+        if local_state in ("idle", "pause"):
             if is_final:
                 full_result = json.loads(recognizer.Result())
                 text = full_result.get("text", "")
             else:
                 partial_result = json.loads(recognizer.PartialResult())
                 text = partial_result.get("partial", "")
-
-            logger.log(TRACE, "text=%s", text)
-
             if text:
-                handle_text_idle(text)
+                yield TextAndIsFinal(text, is_final)
         else:
             logger.debug("idle recognizer finishes its work. is_final=%s", is_final)
             if is_final:
@@ -523,17 +489,39 @@ def idle_recognition_loop():
                 recognizer = None
 
 
-def init_audio_stream():
-    return sd.RawInputStream(
-        samplerate=SAMPLE_RATE,  # Частота дискретизации - 16 000 сэмплов в секунду
-        blocksize=BLOCK_SIZE,  # В одном блоке - 1600 сэмплов. Это - 0.1 секунды, т.к. частота дискретизации - 16 000 сэмплов в секунду
-        dtype='int16',  # Каждый сэмпл - это 16 бит.
-        channels=1,  # Один канал (моно)
-        callback=audio_callback  # Для обработки сэмплов использовать вот такой описанный нами выше обработчик
-    )
+def get_command_recognizer_token_groups() -> Generator[list[str], None, None]:
+    global prev_partial_text
+
+    for text_and_is_final in get_command_recognizer_texts():
+        text = text_and_is_final.text
+
+        logger.log(TRACE, "text=%s", text)
+
+        text = text.strip().lower()
+        if not text:
+            return
+
+        if prev_partial_text is not None and text == prev_partial_text:
+            logger.debug("Same partial")
+            return
+
+        prev_partial_text = text
+
+        # Разбиваем текст частичного результата на слова
+        tokens = text.split()
+        # Печатаем, какие слова там получились
+        logger.info("tokens=%s, state=%r", tokens, app.state.state)
+
+        yield tokens
 
 
-if __name__ == "__main__":
+def command_recognizer_texts_processing_loop():
+    for token_group in get_command_recognizer_token_groups():
+        command = app.commands.command_selector.select_command(token_group)
+        command.do_things()
+
+
+def main():
     security_tokens = get_oauth_and_iam_tokens()
 
     logger.info("Итог:")
@@ -543,10 +531,16 @@ if __name__ == "__main__":
     iam_token = security_tokens["iam_token"]
     yandex_speech_kit_init(iam_token)
 
+    start_overlay()
+
     try:
-        idle_recognition_loop()
+        command_recognizer_texts_processing_loop()
     except KeyboardInterrupt:
         logger.info("")
         logger.info("[MAIN] Остановлено пользователем")
     finally:
         yandex_speech_kit_shutdown()
+
+
+if __name__ == "__main__":
+    main()
