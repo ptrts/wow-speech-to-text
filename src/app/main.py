@@ -381,7 +381,7 @@ def to_idle():
     global recognize_thread, recognize_thread_stop_event
     logger.info("start")
     stop_recognize()
-    set_state("idle", on_idle)
+    app.state.set_state("idle", on_idle)
 
 
 def stop_recognize():

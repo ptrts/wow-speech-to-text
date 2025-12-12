@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 state = "idle"  # "idle" | "pause" | "timer" | "recording"
+
 chat_channel: str | None = None
 
 bottom_text: str = ""
@@ -29,3 +30,5 @@ def set_state(new_state, callback=None):
     logger.debug(new_state)
     state = "timer"
     threading.Timer(0.2, on_schedule_state_timer, args=(new_state, callback)).start()
+
+

@@ -25,7 +25,7 @@ class StartRecordingCommand(Command):
 
     def do_things(self):
         app.state.chat_channel = f"/{self.chat_channel}"
-        set_state("recording", on_recording)
+        app.state.set_state("recording", on_recording)
         prev_partial_text = None
         ...
 
