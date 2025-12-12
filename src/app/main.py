@@ -1,27 +1,24 @@
 from __future__ import annotations
 import json
 import queue
-import time
 from importlib import resources
 import threading
 from typing import NamedTuple
 from collections.abc import Generator
 
-import pyautogui
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
 from app.overlay import start_overlay, show_text, clear_text
 from app.beeps import play_sound
-from app.keyboard.layout_switch import switch_to_russian
 from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
 from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
-from app.keyboard.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
 import app.tokens_to_text_builder as tokens_to_text_builder
 import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
+import app.wow_chat_sender
 
 from app.app_logging import logging, TRACE
 
@@ -53,9 +50,6 @@ ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 SEND_WORDS = {"отправить", "готово", "окей", "ок", "дописать"}  # отправляют в чат
 CANCEL_WORDS = {"сброс", "отмена"}  # сбрасывают буфер
 
-# Задержки между нажатиями, чтобы игра точно всё проглотила
-KEY_DELAY = 0.05  # секунды
-
 # ================== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ==================
 
 prev_partial_text: str | None = None
@@ -63,55 +57,6 @@ prev_partial_text: str | None = None
 recognize_thread: threading.Thread | None = None
 recognize_thread_stop_event: threading.Event | None = None
 q = queue.Queue()  # очередь аудио-данных
-
-
-# ================== ОТПРАВКА В ЧАТ WoW ==================
-
-def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
-    """
-    Отправить сообщение в /bg:
-      Enter, печать "/bg <текст>" как Unicode, Enter.
-    """
-
-    text = text.strip()
-    if not text:
-        logger.info("Пустой текст, не отправляем")
-        return
-
-    switch_to_russian()
-
-    full_msg = f"{channel} {text}"
-    logger.info("Отправляем: %r", full_msg)
-
-    app.keyboard.clipboard_copier.clipboard_copy(full_msg)
-
-    # Небольшая пауза, чтобы не перебивать предыдущее действие
-    time.sleep(KEY_DELAY)
-
-    if not keyboard_is_clean():
-        app.state.overlay_line_bottom = "Отпускай!"
-    refresh_overlay()
-
-    still_clean = wait_for_keyboard_clean()
-
-    app.state.overlay_line_bottom = None
-    refresh_overlay()
-
-    if not still_clean:
-        return
-
-    # Открываем чат
-    pyautogui.press("enter")
-    time.sleep(KEY_DELAY)
-
-    # Вставляем текст через буфер
-    app.keyboard.keyboard_sender.press_ctrl_v()
-    time.sleep(KEY_DELAY)
-
-    # Отправляем
-    if not let_edit:
-        pyautogui.press("enter")
-        time.sleep(KEY_DELAY)
 
 
 def refresh_overlay():
@@ -165,7 +110,7 @@ def handle_text(partial_text: str, is_final: bool):
         if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
-            send_to_wow_chat(app.state.chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
+            app.wow_chat_sender.send_to_wow_chat(app.state.chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
             play_sound("sending_complete")
         else:
             play_sound("sending_error")
