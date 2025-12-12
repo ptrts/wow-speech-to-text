@@ -4,8 +4,6 @@ import queue
 import time
 from importlib import resources
 import threading
-import win32clipboard as cb
-import win32con
 from typing import NamedTuple
 from collections.abc import Generator
 
@@ -15,14 +13,15 @@ from vosk import Model, KaldiRecognizer
 
 from app.overlay import start_overlay, show_text, clear_text
 from app.beeps import play_sound
-from app.layout_switch import switch_to_russian
+from app.keyboard.layout_switch import switch_to_russian
 from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
 from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
-from app.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
+from app.keyboard.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
 import app.tokens_to_text_builder as tokens_to_text_builder
 import app.state
 import app.commands
-import app.keyboard_sender
+import app.keyboard.keyboard_sender
+import app.keyboard.clipboard_copier
 
 from app.app_logging import logging, TRACE
 
@@ -68,16 +67,6 @@ q = queue.Queue()  # очередь аудио-данных
 
 # ================== ОТПРАВКА В ЧАТ WoW ==================
 
-def clipboard_copy(text: str):
-    # Пишем в буфер обмена Юникод-строку
-    cb.OpenClipboard()
-    try:
-        cb.EmptyClipboard()
-        cb.SetClipboardData(win32con.CF_UNICODETEXT, text)
-    finally:
-        cb.CloseClipboard()
-
-
 def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     """
     Отправить сообщение в /bg:
@@ -94,7 +83,7 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     full_msg = f"{channel} {text}"
     logger.info("Отправляем: %r", full_msg)
 
-    clipboard_copy(full_msg)
+    app.keyboard.clipboard_copier.clipboard_copy(full_msg)
 
     # Небольшая пауза, чтобы не перебивать предыдущее действие
     time.sleep(KEY_DELAY)
@@ -116,7 +105,7 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     time.sleep(KEY_DELAY)
 
     # Вставляем текст через буфер
-    app.keyboard_sender.press_ctrl_v()
+    app.keyboard.keyboard_sender.press_ctrl_v()
     time.sleep(KEY_DELAY)
 
     # Отправляем
