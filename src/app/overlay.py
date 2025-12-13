@@ -1,84 +1,106 @@
 import threading
 import time
 
+import win32api
 import win32con
 import win32gui
-import win32api
 
-# ===== Глобальное состояние оверлея =====
 
-CURRENT_TEXT = ("", "")
+CENTER_TEXT = ("", "")
 TOP_TEXT = ""
 BOTTOM_TEXT = ""
+
 HWND = None
-H_FONT = None  # сюда положим большой шрифт
+H_FONT = None
 
 WM_UPDATE_TEXT = win32con.WM_USER + 1
 
 
-# ===== Публичные функции для использования из других модулей =====
-
 def show_text(
-    text_1: str,
-    text_2: str,
-    duration: float | None = None,
-    top_text: str = "",
-    bottom_text: str = "",
+        green_text: str,
+        red_text: str,
+        duration: float | None = None,
 ):
-    """
-    Показать текст на оверлее.
-    duration (сек) — если задано, через это время текст исчезнет.
-    top_text / bottom_text — дополнительные строки над и под основной разноцветной строкой.
-    Можно вызывать из любого потока.
-    """
-    global CURRENT_TEXT, TOP_TEXT, BOTTOM_TEXT
+    set_text(green_text, red_text)
+    if duration is not None:
+        threading.Timer(duration, clear_text)
 
-    CURRENT_TEXT = (text_1, text_2)
+
+def show_top(
+        top_text: str,
+        duration: float | None = None,
+):
+    set_top_text(top_text)
+    if duration is not None:
+        threading.Timer(duration, clear_top_text)
+
+
+def show_bottom(
+        bottom_text: str,
+        duration: float | None = None,
+):
+    set_bottom_text(bottom_text)
+    if duration is not None:
+        threading.Timer(duration, clear_bottom_text)
+
+
+def set_all(
+        green_text: str,
+        red_text: str,
+        top_text: str,
+        bottom_text: str,
+):
+    global CENTER_TEXT, TOP_TEXT, BOTTOM_TEXT
+    CENTER_TEXT = (green_text, red_text)
     TOP_TEXT = top_text
     BOTTOM_TEXT = bottom_text
+    refresh()
 
+
+def set_text(
+        green_text: str,
+        red_text: str,
+):
+    global CENTER_TEXT
+    CENTER_TEXT = (green_text, red_text)
+    refresh()
+
+
+def set_top_text(top_text: str):
+    global TOP_TEXT
+    TOP_TEXT = top_text
+    refresh()
+
+
+def set_bottom_text(bottom_text: str):
+    global BOTTOM_TEXT
+    BOTTOM_TEXT = bottom_text
+    refresh()
+
+
+def refresh():
     if HWND:
-        # попросим окно перерисоваться
         win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
 
-    if duration is not None:
-        def clear_later():
-            time.sleep(duration)
-            clear_text()
 
-        threading.Thread(target=clear_later, daemon=True).start()
+def clear_all():
+    set_all("", "", "", "")
 
 
 def clear_text():
-    """Стереть текст (сделать оверлей пустым)."""
-    global CURRENT_TEXT, TOP_TEXT, BOTTOM_TEXT
-    CURRENT_TEXT = ("", "")
-    TOP_TEXT = ""
-    BOTTOM_TEXT = ""
-    if HWND:
-        win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
+    set_text("", "")
 
 
-def set_top_text(text: str):
-    """Задать дополнительную строку над основной."""
-    global TOP_TEXT
-    TOP_TEXT = text
-    if HWND:
-        win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
+def clear_top_text():
+    set_top_text("")
 
 
-def set_bottom_text(text: str):
-    """Задать дополнительную строку под основной."""
-    global BOTTOM_TEXT
-    BOTTOM_TEXT = text
-    if HWND:
-        win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
+def clear_bottom_text():
+    set_bottom_text("")
 
-
-# ===== Оконная процедура =====
 
 def wnd_proc(hwnd, msg, wparam, lparam):
-    global CURRENT_TEXT, H_FONT, TOP_TEXT, BOTTOM_TEXT
+    global CENTER_TEXT, H_FONT, TOP_TEXT, BOTTOM_TEXT
 
     if msg == win32con.WM_PAINT:
         hdc, ps = win32gui.BeginPaint(hwnd)
@@ -89,11 +111,11 @@ def wnd_proc(hwnd, msg, wparam, lparam):
             brush = win32gui.GetStockObject(win32con.BLACK_BRUSH)
             win32gui.FillRect(hdc, rect, brush)
 
-            # --- поддержка и старого и нового формата CURRENT_TEXT ---
-            if isinstance(CURRENT_TEXT, tuple):
-                green_text, red_text = CURRENT_TEXT
+            # --- поддержка и старого и нового формата CENTER_TEXT ---
+            if isinstance(CENTER_TEXT, tuple):
+                green_text, red_text = CENTER_TEXT
             else:
-                green_text, red_text = CURRENT_TEXT, ""
+                green_text, red_text = CENTER_TEXT, ""
             full_text = (green_text or "") + (red_text or "")
             top_text = TOP_TEXT or ""
             bottom_text = BOTTOM_TEXT or ""
@@ -157,7 +179,7 @@ def wnd_proc(hwnd, msg, wparam, lparam):
                         win32con.DT_LEFT
                         | win32con.DT_TOP
                         | win32con.DT_SINGLELINE,
-                        )
+                    )
 
                     # 2) поверх — зелёный префикс
                     if green_text:
@@ -173,7 +195,7 @@ def wnd_proc(hwnd, msg, wparam, lparam):
                             win32con.DT_LEFT
                             | win32con.DT_TOP
                             | win32con.DT_SINGLELINE,
-                            )
+                        )
 
                 if top_text:
                     draw_centered(top_text, win32api.RGB(200, 0, 255), y - full_h - line_spacing)

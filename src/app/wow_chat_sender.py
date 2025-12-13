@@ -9,6 +9,7 @@ import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
+import app.overlay
 
 from app.app_logging import logging, TRACE
 
@@ -42,13 +43,11 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
     time.sleep(KEY_DELAY)
 
     if not keyboard_is_clean():
-        app.state.overlay_line_bottom = "Отпускай!"
-    refresh_overlay()
+        app.overlay.set_bottom_text("Отпускай!")
 
     still_clean = wait_for_keyboard_clean()
 
-    app.state.overlay_line_bottom = None
-    refresh_overlay()
+    app.overlay.clear_bottom_text()
 
     if not still_clean:
         return

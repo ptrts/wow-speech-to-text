@@ -10,6 +10,7 @@ import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
 from app.overlay import start_overlay, show_text, clear_text
+import app.overlay
 from app.beeps import play_sound
 from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
 from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
@@ -59,13 +60,10 @@ recognize_thread_stop_event: threading.Event | None = None
 q = queue.Queue()  # очередь аудио-данных
 
 
-def refresh_overlay():
-    if app.state.state == "recording":
-        text_1 = f"{app.state.chat_channel} {tokens_to_text_builder.final_text}"
-        text_2 = tokens_to_text_builder.non_final_text
-        show_text(text_1, text_2, bottom_text=app.state.overlay_line_bottom)
-    else:
-        clear_text()
+def recording_refresh_overlay():
+    text_1 = f"{app.state.chat_channel} {tokens_to_text_builder.final_text}"
+    text_2 = tokens_to_text_builder.non_final_text
+    app.overlay.show_text(text_1, text_2)
 
 
 def handle_text(partial_text: str, is_final: bool):
@@ -101,11 +99,11 @@ def handle_text(partial_text: str, is_final: bool):
     if stop_command is None:
         logger.debug("Нет стоп команды")
         tokens_to_text_builder.build_text(tokens, is_final)
-        refresh_overlay()
+        recording_refresh_overlay()
     elif stop_command in SEND_WORDS:
         tokens = tokens[0: stop_command_position]
         tokens_to_text_builder.build_text(tokens, True)
-        refresh_overlay()
+        recording_refresh_overlay()
         stop_recognize()
         if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
@@ -146,8 +144,7 @@ def on_idle():
     app.state.chat_channel = None
     prev_partial_text = None
     tokens_to_text_builder.reset()
-    app.state.overlay_line_bottom = None
-    refresh_overlay()
+    app.overlay.clear_all()
 
 
 def to_idle():
