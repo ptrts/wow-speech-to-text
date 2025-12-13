@@ -2,24 +2,23 @@ from __future__ import annotations
 import json
 import queue
 from importlib import resources
-import threading
 from typing import NamedTuple
 from collections.abc import Generator
 
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
-from app.overlay import start_overlay, show_text, clear_text
+from app.overlay import start_overlay, show_text
 import app.overlay
 from app.beeps import play_sound
 from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
-from app.yandex_speech_kit import yandex_speech_kit_init, yandex_speech_kit_shutdown, recognize_from_microphone
 import app.tokens_to_text_builder as tokens_to_text_builder
 import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
 import app.wow_chat_sender
+import app.recognize_thread
 
 from app.app_logging import logging, TRACE
 
@@ -55,8 +54,6 @@ CANCEL_WORDS = {"сброс", "отмена"}  # сбрасывают буфер
 
 prev_partial_text: str | None = None
 
-recognize_thread: threading.Thread | None = None
-recognize_thread_stop_event: threading.Event | None = None
 q = queue.Queue()  # очередь аудио-данных
 
 
@@ -104,7 +101,7 @@ def handle_text(partial_text: str, is_final: bool):
         tokens = tokens[0: stop_command_position]
         tokens_to_text_builder.build_text(tokens, True)
         recording_refresh_overlay()
-        stop_recognize()
+        app.recognize_thread.stop()
         if tokens_to_text_builder.text:
             logger.debug("Вызываем отправку в чат")
             play_sound("sending_started")
@@ -127,16 +124,8 @@ def on_recognized_fragment(alternatives: list[str], is_final: bool):
 
 
 def on_recording():
-    global recognize_thread, recognize_thread_stop_event
     show_text(app.state.chat_channel, "")
-
-    recognize_thread_stop_event = threading.Event()
-    recognize_thread = threading.Thread(
-        target=recognize_from_microphone,
-        args=(recognize_thread_stop_event, on_recognized_fragment),
-        daemon=True
-    )
-    recognize_thread.start()
+    app.recognize_thread.start(on_recognized_fragment)
 
 
 def on_idle():
@@ -148,20 +137,9 @@ def on_idle():
 
 
 def to_idle():
-    global recognize_thread, recognize_thread_stop_event
     logger.info("start")
-    stop_recognize()
+    app.recognize_thread.stop()
     app.state.set_state("idle", on_idle)
-
-
-def stop_recognize():
-    global recognize_thread, recognize_thread_stop_event
-    if recognize_thread:
-        logger.info("recognize_thread is set. Stopping the thread")
-        recognize_thread_stop_event.set()
-        recognize_thread = None
-    else:
-        logger.info("recognize_thread is not set")
 
 
 # ================== АУДИОПОТОК И РАСПОЗНАВАНИЕ ==================
@@ -299,7 +277,7 @@ def main():
         logger.info(f"{k}: {v}")
 
     iam_token = security_tokens["iam_token"]
-    yandex_speech_kit_init(iam_token)
+    app.recognize_thread.init(iam_token)
 
     start_overlay()
 
@@ -309,7 +287,7 @@ def main():
         logger.info("")
         logger.info("[MAIN] Остановлено пользователем")
     finally:
-        yandex_speech_kit_shutdown()
+        app.recognize_thread.shutdown()
 
 
 if __name__ == "__main__":
