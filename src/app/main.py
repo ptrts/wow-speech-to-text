@@ -1,27 +1,19 @@
 from __future__ import annotations
-import json
-import queue
-from importlib import resources
-from typing import NamedTuple
-from collections.abc import Generator
 
-import sounddevice as sd
-from vosk import Model, KaldiRecognizer
-
-from app.overlay import start_overlay, show_text
+from app.overlay import start_overlay
 import app.overlay
-from app.beeps import play_sound
 from app.yandex_cloud_oauth import get_oauth_and_iam_tokens
-import app.tokens_to_text_builder as tokens_to_text_builder
 import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
 import app.wow_chat_sender
 import app.recognize_thread
-import app.recording_texts_processor
+import app.recording_processor
+import app.idle_processor
+import app.mode_switcher
 
-from app.app_logging import logging, TRACE
+from app.app_logging import logging
 
 
 logger = logging.getLogger(__name__)
@@ -39,8 +31,20 @@ def main():
 
     start_overlay()
 
+    recording_processor = app.recording_processor.RecordingTextsProcessor()
+    idle_processor = app.idle_processor.IdleProcessor()
+
+    switcher = app.mode_switcher.Switcher(idle_processor, recording_processor)
+    recording_processor.switcher = switcher
+    idle_processor.switcher = switcher
+
+
+
+
+
+
     try:
-        command_recognizer_texts_processing_loop()
+        app.idle_processor.command_recognizer_texts_processing_loop()
     except KeyboardInterrupt:
         logger.info("")
         logger.info("[MAIN] Остановлено пользователем")

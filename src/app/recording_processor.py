@@ -9,6 +9,7 @@ import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
 import app.wow_chat_sender
 import app.recognize_thread
+import app.mode_switcher
 
 from app.app_logging import logging
 
@@ -19,9 +20,13 @@ SEND_WORDS = {"отправить", "готово", "окей", "ок", "доп�
 CANCEL_WORDS = {"сброс", "отмена"}  # сбрасывают буфер
 
 
-class RecordingTextsProcessor(object):
+class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
 
+    chat_channel: str | None = None
     prev_partial_text: str | None = None
+
+    def __init__(self, switcher: app.mode_switcher.Switcher):
+        super().__init__(switcher, "recording")
 
     def handle_recognized_fragment(self, recognized_fragment: str, is_final: bool):
 
@@ -69,26 +74,32 @@ class RecordingTextsProcessor(object):
             else:
                 app.beeps.play_sound("sending_error")
                 logger.debug("Пытались отправить, но буфер пуст")
-            to_idle()
+            self.switcher.switch("idle")
 
         elif stop_command in CANCEL_WORDS:
             logger.debug("Сброс")
             app.beeps.play_sound("editing_cancelled")
-            to_idle()
+            self.switcher.switch("idle")
 
-
-    def on_recording():
-        show_text(app.state.chat_channel, "")
-        app.recognize_thread.start(on_recognized_fragment)
-
-
-    def on_recognized_fragment(alternatives: list[str], is_final: bool):
-        if app.state.state == "recording":
-            app.recording_texts_processor.handle_recognized_fragment(alternatives[0], is_final)
-
+    def on_recognized_fragment(self, alternatives: list[str], is_final: bool):
+        if self.switcher.mode == "recording":
+            self.handle_recognized_fragment(alternatives[0], is_final)
 
     @staticmethod
     def recording_refresh_overlay():
         text_1 = f"{app.state.chat_channel} {tokens_to_text_builder.final_text}"
         text_2 = tokens_to_text_builder.non_final_text
         app.overlay.show_text(text_1, text_2)
+
+    def on_mode_enter(self):
+        self.prev_partial_text = None
+        app.overlay.show_text(app.state.chat_channel, "")
+        app.recognize_thread.start(self.on_recognized_fragment)
+
+    def on_mode_leave(self):
+        app.recognize_thread.stop()
+
+    def on_mode_leave_2(self):
+        app.state.chat_channel = None
+        tokens_to_text_builder.reset()
+        app.overlay.clear_all()
