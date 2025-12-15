@@ -25,13 +25,13 @@ class ModeProcessor(object):
         self.switcher = switcher
         self.switcher.register(mode, self)
 
+    def on_mode_enter(self):
+        ...
+
     def on_mode_leave(self):
         ...
 
-    def on_mode_leave_2(self):
-        ...
-
-    def on_mode_enter(self):
+    def on_after_leave_grace(self):
         ...
 
 
@@ -56,7 +56,7 @@ class Switcher(object):
 
         old_mode = self.mode
         old_processor = self.mode_to_processor[old_mode]
-        old_processor.on_mode_leave_2()
+        old_processor.on_after_leave_grace()
 
         self.mode = new_mode
 

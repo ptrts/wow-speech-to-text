@@ -39,6 +39,11 @@ ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "кри�
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
 
+class TextAndIsFinal(NamedTuple):
+    text: str
+    is_final: bool
+
+
 class IdleProcessor(app.mode_switcher.ModeProcessor):
 
     prev_partial_text: str | None = None
@@ -65,10 +70,6 @@ class IdleProcessor(app.mode_switcher.ModeProcessor):
             channels=1,  # Один канал (моно)
             callback=self.audio_callback
         )
-
-    class TextAndIsFinal(NamedTuple):
-        text: str
-        is_final: bool
 
     def get_command_recognizer_texts(self) -> Generator[TextAndIsFinal, None, None]:
 
@@ -130,7 +131,7 @@ class IdleProcessor(app.mode_switcher.ModeProcessor):
                     partial_result = json.loads(recognizer.PartialResult())
                     text = partial_result.get("partial", "")
                 if text:
-                    yield self.TextAndIsFinal(text, is_final)
+                    yield TextAndIsFinal(text, is_final)
             else:
                 logger.debug("idle recognizer finishes its work. is_final=%s", is_final)
                 if is_final:

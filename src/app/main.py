@@ -31,20 +31,12 @@ def main():
 
     start_overlay()
 
-    recording_processor = app.recording_processor.RecordingTextsProcessor()
-    idle_processor = app.idle_processor.IdleProcessor()
-
-    switcher = app.mode_switcher.Switcher(idle_processor, recording_processor)
-    recording_processor.switcher = switcher
-    idle_processor.switcher = switcher
-
-
-
-
-
+    switcher = app.mode_switcher.Switcher()
+    app.recording_processor.RecordingTextsProcessor(switcher)
+    idle_processor = app.idle_processor.IdleProcessor(switcher)
 
     try:
-        app.idle_processor.command_recognizer_texts_processing_loop()
+        idle_processor.command_recognizer_texts_processing_loop()
     except KeyboardInterrupt:
         logger.info("")
         logger.info("[MAIN] Остановлено пользователем")

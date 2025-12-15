@@ -69,7 +69,7 @@ class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
             if tokens_to_text_builder.text:
                 logger.debug("Вызываем отправку в чат")
                 app.beeps.play_sound("sending_started")
-                app.wow_chat_sender.send_to_wow_chat(app.state.chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
+                app.wow_chat_sender.send_to_wow_chat(self.chat_channel, tokens_to_text_builder.text, let_edit=(stop_command == "дописать"))
                 app.beeps.play_sound("sending_complete")
             else:
                 app.beeps.play_sound("sending_error")
@@ -85,21 +85,20 @@ class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
         if self.switcher.mode == "recording":
             self.handle_recognized_fragment(alternatives[0], is_final)
 
-    @staticmethod
-    def recording_refresh_overlay():
-        text_1 = f"{app.state.chat_channel} {tokens_to_text_builder.final_text}"
+    def recording_refresh_overlay(self):
+        text_1 = f"{self.chat_channel} {tokens_to_text_builder.final_text}"
         text_2 = tokens_to_text_builder.non_final_text
         app.overlay.show_text(text_1, text_2)
 
     def on_mode_enter(self):
         self.prev_partial_text = None
-        app.overlay.show_text(app.state.chat_channel, "")
+        app.overlay.show_text(self.chat_channel, "")
         app.recognize_thread.start(self.on_recognized_fragment)
 
     def on_mode_leave(self):
         app.recognize_thread.stop()
 
-    def on_mode_leave_2(self):
-        app.state.chat_channel = None
+    def on_after_leave_grace(self):
+        self.chat_channel = None
         tokens_to_text_builder.reset()
         app.overlay.clear_all()
