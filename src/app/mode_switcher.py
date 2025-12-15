@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import threading
-from app.overlay import start_overlay
 import app.overlay
-import app.tokens_to_text_builder as tokens_to_text_builder
 import app.state
 import app.commands
 import app.keyboard.keyboard_sender
@@ -50,6 +48,18 @@ class Switcher(object):
         logger.debug(mode)
         self.mode = "timer"
         threading.Timer(0.2, self.after_timer, args=(mode,)).start()
+
+    # todo Кажется, нельзя запускать режимы независимым образом, и сигнатура запуска каждого режима зависит от специфики того или иного режима.
+    #      Стало быть, разные режимы таки должны зависеть друг от друга.
+
+    def to_idle(self):
+        self.switch("idle")
+
+    def to_recording(self, chat_channel: str):
+        # noinspection PyTypeChecker
+        recording_processor: app.recording_processor.RecordingTextsProcessor = self.mode_to_processor["recording"]
+        recording_processor.chat_channel = chat_channel
+        self.switch("recording")
 
     def after_timer(self, new_mode):
         logger.debug("%s => %s", self.mode, new_mode)
