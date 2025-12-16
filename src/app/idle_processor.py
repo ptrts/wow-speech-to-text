@@ -36,6 +36,7 @@ IDLE_MODEL_PATH = BASE_DIR / "vosk-model-small-ru-0.22"
 
 # Слова-триггеры
 ACTIVATE_WORD_TO_CHAT_CHANNEL = {"бой": "bg", "сказать": "s", "крикнуть": "y", "гильдия": "g"}
+# todo Вытащить как-то из списка команд
 ACTIVATE_WORDS = ACTIVATE_WORD_TO_CHAT_CHANNEL.keys()
 
 
@@ -171,8 +172,10 @@ class IdleProcessor(app.mode_container.ModeProcessor):
             command = app.commands.command_selector.select_command(token_group)
             command.do_things()
 
-    def switch_to(self):
-        self.mode_container.to_mode(self, self.mode, self.on_mode_enter)
+    def to_recording(self, chat_channel: str):
+        def enter_mode():
+            self.recording_processor.on_mode_enter(chat_channel)
+        self.mode_container.to_mode(self, self.recording_processor.mode, enter_mode)
 
     def on_mode_enter(self):
         self.prev_partial_text = None

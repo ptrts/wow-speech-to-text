@@ -5,6 +5,10 @@ import win32api
 import win32con
 import win32gui
 
+from app.app_logging import logging
+
+
+logger = logging.getLogger(__name__)
 
 CENTER_TEXT = ("", "")
 TOP_TEXT = ""
@@ -21,9 +25,11 @@ def show_text(
         red_text: str,
         duration: float | None = None,
 ):
+    logger.info("start")
     set_text(green_text, red_text)
     if duration is not None:
-        threading.Timer(duration, clear_text)
+        logger.info("setting up timer")
+        threading.Timer(duration, clear_text).start()
 
 
 def show_top(
@@ -32,7 +38,7 @@ def show_top(
 ):
     set_top_text(top_text)
     if duration is not None:
-        threading.Timer(duration, clear_top_text)
+        threading.Timer(duration, clear_top_text).start()
 
 
 def show_bottom(
@@ -41,7 +47,7 @@ def show_bottom(
 ):
     set_bottom_text(bottom_text)
     if duration is not None:
-        threading.Timer(duration, clear_bottom_text)
+        threading.Timer(duration, clear_bottom_text).start()
 
 
 def set_all(
@@ -62,6 +68,7 @@ def set_text(
         red_text: str,
 ):
     global CENTER_TEXT
+    logger.info("start")
     CENTER_TEXT = (green_text, red_text)
     refresh()
 
@@ -79,7 +86,9 @@ def set_bottom_text(bottom_text: str):
 
 
 def refresh():
+    logger.info("start")
     if HWND:
+        logger.info("sending window message")
         win32gui.PostMessage(HWND, WM_UPDATE_TEXT, 0, 0)
 
 
@@ -88,6 +97,7 @@ def clear_all():
 
 
 def clear_text():
+    logger.info("start")
     set_text("", "")
 
 
@@ -102,7 +112,10 @@ def clear_bottom_text():
 def wnd_proc(hwnd, msg, wparam, lparam):
     global CENTER_TEXT, H_FONT, TOP_TEXT, BOTTOM_TEXT
 
+    logger.info("start")
+
     if msg == win32con.WM_PAINT:
+        logger.info("msg == win32con.WM_PAINT")
         hdc, ps = win32gui.BeginPaint(hwnd)
         try:
             rect = win32gui.GetClientRect(hwnd)
@@ -212,6 +225,7 @@ def wnd_proc(hwnd, msg, wparam, lparam):
         return 0
 
     if msg == WM_UPDATE_TEXT:
+        logger.info("msg == WM_UPDATE_TEXT")
         win32gui.InvalidateRect(hwnd, None, True)
         return 0
 

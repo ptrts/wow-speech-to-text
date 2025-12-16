@@ -1,5 +1,5 @@
 import app.mode_container
-import app.recording_processor
+import app.idle_processor
 import app.overlay
 
 
@@ -25,7 +25,7 @@ class StartRecordingCommand(Command):
         self.chat_channel = chat
 
     def do_things(self):
-        app.recording_processor.recording_processor.switch_to(self.chat_channel)
+        app.idle_processor.idle_processor.to_recording(self.chat_channel)
 
 
 commands = [

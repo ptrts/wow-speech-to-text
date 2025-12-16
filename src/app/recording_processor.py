@@ -79,31 +79,29 @@ class RecordingTextsProcessor(app.mode_container.ModeProcessor):
             else:
                 app.beeps.play_sound("sending_error")
                 logger.debug("Пытались отправить, но буфер пуст")
-            self.idle_processor.switch_to()
+            self.to_idle()
 
         elif stop_command in CANCEL_WORDS:
             logger.debug("Сброс")
             app.beeps.play_sound("editing_cancelled")
-            self.idle_processor.switch_to()
+            self.to_idle()
 
     def on_recognized_fragment(self, alternatives: list[str], is_final: bool):
         if self.mode_container.mode == "recording":
             self.handle_recognized_fragment(alternatives[0], is_final)
 
     def recording_refresh_overlay(self):
-        text_1 = f"{self.chat_channel} {tokens_to_text_builder.final_text}"
+        text_1 = f"/{self.chat_channel} {tokens_to_text_builder.final_text}"
         text_2 = tokens_to_text_builder.non_final_text
         app.overlay.show_text(text_1, text_2)
 
-    def switch_to(self, chat_channel: str):
-        def enter_mode():
-            self.chat_channel = chat_channel
-            self.on_mode_enter()
-        self.mode_container.to_mode(self, self.mode, enter_mode)
+    def to_idle(self):
+        self.mode_container.to_mode(self, app.idle_processor.idle_processor.mode)
 
-    def on_mode_enter(self):
+    def on_mode_enter(self, chat_channel: str):
+        self.chat_channel = chat_channel
         self.prev_partial_text = None
-        app.overlay.show_text(self.chat_channel, "")
+        self.recording_refresh_overlay()
         app.recognize_thread.start(self.on_recognized_fragment)
 
     def on_mode_leave(self):
