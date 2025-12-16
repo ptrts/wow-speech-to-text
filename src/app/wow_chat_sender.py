@@ -33,7 +33,7 @@ def send_to_wow_chat(channel: str, text: str, let_edit: bool = False):
 
     switch_to_russian()
 
-    full_msg = f"{channel} {text}"
+    full_msg = f"/{channel} {text}"
     logger.info("Отправляем: %r", full_msg)
 
     app.keyboard.clipboard_copier.clipboard_copy(full_msg)

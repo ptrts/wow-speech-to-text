@@ -26,17 +26,16 @@ class ModeContainer(object):
 
     mode = "idle"  # "idle" | "pause" | "timer" | "recording"
 
-    def to_mode(self, from_mode_processor: ModeProcessor, to_mode: str, enter_mode_callback: Callable = None):
+    def to_mode(self, from_mode_processor: ModeProcessor, to_mode: str, enter_mode_callback: Callable):
         from_mode_processor.on_mode_leave()
         self.mode = "timer"
         threading.Timer(0.2, self.after_timer, (from_mode_processor, to_mode, enter_mode_callback)).start()
 
-    def after_timer(self, from_mode_processor: ModeProcessor, to_mode: str, enter_mode_callback: Callable = None):
+    def after_timer(self, from_mode_processor: ModeProcessor, to_mode: str, enter_mode_callback: Callable):
         logger.debug("%s => %s", self.mode, to_mode)
         from_mode_processor.on_after_mode_leave_grace()
         self.mode = to_mode
-        if enter_mode_callback:
-            enter_mode_callback()
+        enter_mode_callback()
 
 
 mode_container = ModeContainer()

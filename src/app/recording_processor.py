@@ -96,7 +96,7 @@ class RecordingTextsProcessor(app.mode_container.ModeProcessor):
         app.overlay.show_text(text_1, text_2)
 
     def to_idle(self):
-        self.mode_container.to_mode(self, app.idle_processor.idle_processor.mode)
+        self.mode_container.to_mode(self, app.idle_processor.idle_processor.mode, app.idle_processor.idle_processor.on_mode_enter)
 
     def on_mode_enter(self, chat_channel: str):
         self.chat_channel = chat_channel
@@ -105,9 +105,11 @@ class RecordingTextsProcessor(app.mode_container.ModeProcessor):
         app.recognize_thread.start(self.on_recognized_fragment)
 
     def on_mode_leave(self):
+        logger.debug("start")
         app.recognize_thread.stop()
 
     def on_after_mode_leave_grace(self):
+        logger.debug("start")
         self.chat_channel = None
         tokens_to_text_builder.reset()
         app.overlay.clear_all()

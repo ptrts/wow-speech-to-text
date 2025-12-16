@@ -100,7 +100,7 @@ def _add_smart_token(syntax_rules: _SyntaxRules | None, smart_token: str, *word_
         _word_combination_to_smart_token[tuple(words)] = smart_token
 
 
-_add_smart_token(_SYNTAX_LEAN_LEFT, ",", "запятая")
+_add_smart_token(_SYNTAX_LEAN_LEFT, ",", "запятая", "запятая запятая")
 _add_smart_token(_SYNTAX_LEAN_LEFT, ";", "точка с запятой")
 _add_smart_token(_SYNTAX_LEAN_LEFT, ":", "двоеточие")
 _add_smart_token(_SYNTAX_LEAN_LEFT, "...", "многоточие")
@@ -374,9 +374,13 @@ def build_text(new_raw_tokens: list[str], is_final: bool) -> str:
 
 
 def reset():
-    global text, _final_token_index
+    global text, final_text, non_final_text, _final_token_index
+
+    _logger.debug("start")
 
     text = ""
+    final_text = ""
+    non_final_text = ""
     _all_tokens.clear()
     _final_token_index = -1
     _prev_partial_tokens.clear()

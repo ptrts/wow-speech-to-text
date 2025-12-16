@@ -152,11 +152,11 @@ class IdleProcessor(app.mode_container.ModeProcessor):
 
             text = text.strip().lower()
             if not text:
-                return
+                continue
 
             if self.prev_partial_text is not None and text == self.prev_partial_text:
                 logger.debug("Same partial")
-                return
+                continue
 
             self.prev_partial_text = text
 
@@ -178,6 +178,9 @@ class IdleProcessor(app.mode_container.ModeProcessor):
         self.mode_container.to_mode(self, self.recording_processor.mode, enter_mode)
 
     def on_mode_enter(self):
+        self.prev_partial_text = None
+
+    def on_mode_leave(self):
         self.prev_partial_text = None
 
 
