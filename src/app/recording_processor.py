@@ -3,13 +3,13 @@ from __future__ import annotations
 import app.overlay
 import app.beeps
 import app.tokens_to_text_builder as tokens_to_text_builder
-import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
 import app.wow_chat_sender
 import app.recognize_thread
-import app.mode_switcher
+import app.mode_container
+import app.idle_processor
 
 from app.app_logging import logging
 
@@ -20,13 +20,18 @@ SEND_WORDS = {"отправить", "готово", "окей", "ок", "доп�
 CANCEL_WORDS = {"сброс", "отмена"}  # сбрасывают буфер
 
 
-class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
+class RecordingTextsProcessor(app.mode_container.ModeProcessor):
 
     chat_channel: str | None = None
     prev_partial_text: str | None = None
 
-    def __init__(self, switcher: app.mode_switcher.Switcher):
-        super().__init__(switcher, "recording")
+    idle_processor: app.idle_processor.IdleProcessor
+
+    def __init__(self, mode_container: app.mode_container.ModeContainer):
+        super().__init__(mode_container, "recording")
+
+    def set_idle_processor(self, idle_processor: app.idle_processor.IdleProcessor):
+        self.idle_processor = idle_processor
 
     def handle_recognized_fragment(self, recognized_fragment: str, is_final: bool):
 
@@ -60,11 +65,11 @@ class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
         if stop_command is None:
             logger.debug("Нет стоп команды")
             tokens_to_text_builder.build_text(tokens, is_final)
-            RecordingTextsProcessor.recording_refresh_overlay()
+            self.recording_refresh_overlay()
         elif stop_command in SEND_WORDS:
             tokens = tokens[0: stop_command_position]
             tokens_to_text_builder.build_text(tokens, True)
-            RecordingTextsProcessor.recording_refresh_overlay()
+            self.recording_refresh_overlay()
             app.recognize_thread.stop()
             if tokens_to_text_builder.text:
                 logger.debug("Вызываем отправку в чат")
@@ -74,21 +79,27 @@ class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
             else:
                 app.beeps.play_sound("sending_error")
                 logger.debug("Пытались отправить, но буфер пуст")
-            self.switcher.switch("idle")
+            self.idle_processor.switch_to()
 
         elif stop_command in CANCEL_WORDS:
             logger.debug("Сброс")
             app.beeps.play_sound("editing_cancelled")
-            self.switcher.switch("idle")
+            self.idle_processor.switch_to()
 
     def on_recognized_fragment(self, alternatives: list[str], is_final: bool):
-        if self.switcher.mode == "recording":
+        if self.mode_container.mode == "recording":
             self.handle_recognized_fragment(alternatives[0], is_final)
 
     def recording_refresh_overlay(self):
         text_1 = f"{self.chat_channel} {tokens_to_text_builder.final_text}"
         text_2 = tokens_to_text_builder.non_final_text
         app.overlay.show_text(text_1, text_2)
+
+    def switch_to(self, chat_channel: str):
+        def enter_mode():
+            self.chat_channel = chat_channel
+            self.on_mode_enter()
+        self.mode_container.to_mode(self, self.mode, enter_mode)
 
     def on_mode_enter(self):
         self.prev_partial_text = None
@@ -98,7 +109,10 @@ class RecordingTextsProcessor(app.mode_switcher.ModeProcessor):
     def on_mode_leave(self):
         app.recognize_thread.stop()
 
-    def on_after_leave_grace(self):
+    def on_after_mode_leave_grace(self):
         self.chat_channel = None
         tokens_to_text_builder.reset()
         app.overlay.clear_all()
+
+
+recording_processor = RecordingTextsProcessor(app.mode_container.mode_container)

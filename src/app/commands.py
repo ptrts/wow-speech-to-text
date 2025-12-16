@@ -1,15 +1,16 @@
-import app.state
+import app.mode_container
+import app.recording_processor
 import app.overlay
 
 
 class Command(object):
-    state: str
-    new_state: str
+    mode: str
+    new_mode: str
 
-    def __init__(self, state: str, words: tuple[str, ...], new_state: str):
-        self.state = state
+    def __init__(self, mode: str, words: tuple[str, ...], new_mode: str):
+        self.mode = mode
         self.words = words
-        self.new_state = new_state
+        self.new_mode = new_mode
 
     def do_things(self):
         ...
@@ -24,10 +25,7 @@ class StartRecordingCommand(Command):
         self.chat_channel = chat
 
     def do_things(self):
-        app.state.chat_channel = f"/{self.chat_channel}"
-        app.state.set_state("recording", on_recording)
-        prev_partial_text = None
-        ...
+        app.recording_processor.recording_processor.switch_to(self.chat_channel)
 
 
 commands = [
@@ -39,14 +37,14 @@ commands = [
 
 
 class CommandSelector(object):
-    state_to_word_to_command: dict[str, dict[str, Command]] = {}
+    mode_to_word_to_command: dict[str, dict[str, Command]] = {}
 
     def __init__(self, commands_arg: list[Command]):
         for command in commands_arg:
             self._register_command(command)
 
     def select_command(self, tokens: list[str]):
-        word_to_command = self.state_to_word_to_command.get(app.state.state)
+        word_to_command = self.mode_to_word_to_command.get(app.mode_container.mode_container.mode)
         if word_to_command:
             for token in tokens:
                 command = word_to_command.get(token)
@@ -54,10 +52,10 @@ class CommandSelector(object):
                     return command
 
     def _register_command(self, command):
-        word_to_command = self.state_to_word_to_command.get(command.state)
+        word_to_command = self.mode_to_word_to_command.get(command.mode)
         if not word_to_command:
             word_to_command = {}
-            self.state_to_word_to_command[command.state] = word_to_command
+            self.mode_to_word_to_command[command.mode] = word_to_command
         for word in command.words:
             word_to_command[word] = command
 

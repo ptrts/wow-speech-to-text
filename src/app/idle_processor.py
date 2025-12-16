@@ -10,13 +10,13 @@ from vosk import Model, KaldiRecognizer
 
 import app.overlay
 from app.beeps import play_sound
-import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
 import app.wow_chat_sender
 import app.recognize_thread
-import app.mode_switcher
+import app.mode_container
+import app.recording_processor
 
 from app.app_logging import logging, TRACE
 
@@ -44,14 +44,19 @@ class TextAndIsFinal(NamedTuple):
     is_final: bool
 
 
-class IdleProcessor(app.mode_switcher.ModeProcessor):
+class IdleProcessor(app.mode_container.ModeProcessor):
 
     prev_partial_text: str | None = None
 
     q = queue.Queue()  # очередь аудио-данных
 
-    def __init__(self, switcher: app.mode_switcher.Switcher):
-        super().__init__(switcher, "idle")
+    recording_processor: app.recording_processor.RecordingTextsProcessor
+
+    def __init__(self, mode_container: app.mode_container.ModeContainer):
+        super().__init__(mode_container, "idle")
+
+    def set_recording_processor(self, recording_processor: app.recording_processor.RecordingTextsProcessor):
+        self.recording_processor = recording_processor
 
     # Наш обработчик данных от sounddevice
     def audio_callback(self, indata, frames, time_info, status):
@@ -91,22 +96,22 @@ class IdleProcessor(app.mode_switcher.ModeProcessor):
 
         recognizer = None
 
-        local_state: str | None = None
+        local_mode: str | None = None
 
         # И садимся в мертвый цикл
         while True:
-            if app.state.state != local_state:
-                local_state = app.state.state
+            if self.mode_container.mode != local_mode:
+                local_mode = self.mode_container.mode
 
-                logger.debug("local_state=%s", local_state)
+                logger.debug("local_mode=%s", local_mode)
 
-                if local_state == "idle" or local_state == "pause":
+                if local_mode == "idle" or local_mode == "pause":
                     recognizer = get_command_recognizer()
                 else:
                     recognizer = None
 
-                if app.state.state in ("idle", "pause"):
-                    play_sound(local_state)
+                if self.mode_container.mode in ("idle", "pause"):
+                    play_sound(local_mode)
 
             # Садимся ждать очередной кусок данных из входящего потока цифрового аудио
             try:
@@ -123,7 +128,7 @@ class IdleProcessor(app.mode_switcher.ModeProcessor):
 
             is_final = recognizer.AcceptWaveform(data)
 
-            if local_state in ("idle", "pause"):
+            if local_mode in ("idle", "pause"):
                 if is_final:
                     full_result = json.loads(recognizer.Result())
                     text = full_result.get("text", "")
@@ -157,7 +162,7 @@ class IdleProcessor(app.mode_switcher.ModeProcessor):
             # Разбиваем текст частичного результата на слова
             tokens = text.split()
             # Печатаем, какие слова там получились
-            logger.info("tokens=%s, state=%r", tokens, app.state.state)
+            logger.info("tokens=%s, mode=%r", tokens, self.mode_container.mode)
 
             yield tokens
 
@@ -166,8 +171,11 @@ class IdleProcessor(app.mode_switcher.ModeProcessor):
             command = app.commands.command_selector.select_command(token_group)
             command.do_things()
 
+    def switch_to(self):
+        self.mode_container.to_mode(self, self.mode, self.on_mode_enter)
+
     def on_mode_enter(self):
         self.prev_partial_text = None
 
-    def on_mode_leave(self):
-        ...
+
+idle_processor = IdleProcessor(app.mode_container.mode_container)

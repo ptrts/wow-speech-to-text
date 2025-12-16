@@ -5,13 +5,12 @@ import pyautogui
 
 from app.keyboard.layout_switch import switch_to_russian
 from app.keyboard.keyboard_state import keyboard_is_clean, wait_for_keyboard_clean
-import app.state
 import app.commands
 import app.keyboard.keyboard_sender
 import app.keyboard.clipboard_copier
 import app.overlay
 
-from app.app_logging import logging, TRACE
+from app.app_logging import logging
 
 
 logger = logging.getLogger(__name__)
