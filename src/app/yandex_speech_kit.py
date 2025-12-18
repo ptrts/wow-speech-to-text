@@ -161,9 +161,11 @@ def recognize_from_microphone(stop_event: threading.Event, callback: RecognizedF
             # Делаем разное, в зависимости от того, какое из этих полей там было задано.
             # Достаем список альтернативных слов из соответствующего объекта.
             if event_type == 'partial' and len(streaming_response.partial.alternatives) > 0:
+                logger.debug("alternatives=%r", streaming_response.partial.alternatives)
                 alternatives = [a.text for a in streaming_response.partial.alternatives]
                 callback(alternatives, False)
             if event_type == 'final':
+                logger.debug("alternatives=%r", streaming_response.partial.alternatives)
                 alternatives = [a.text for a in streaming_response.final.alternatives]
                 callback(alternatives, True)
 
