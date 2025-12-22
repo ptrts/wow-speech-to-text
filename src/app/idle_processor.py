@@ -170,7 +170,8 @@ class IdleProcessor(app.mode_container.ModeProcessor):
     def command_recognizer_texts_processing_loop(self):
         for token_group in self.get_command_recognizer_token_groups():
             command = app.commands.command_selector.select_command(token_group)
-            command.do_things()
+            if command:
+                command.do_things()
 
     def to_recording(self, chat_channel: str):
         def enter_mode():
