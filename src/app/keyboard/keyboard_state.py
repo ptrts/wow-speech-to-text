@@ -2,6 +2,11 @@ import ctypes
 import time
 from ctypes import wintypes
 
+from app.app_logging import logging
+
+
+logger = logging.getLogger(__name__)
+
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 
 # сигнатура GetAsyncKeyState
@@ -15,11 +20,12 @@ def keyboard_is_clean() -> bool:
     """
     True -> на клавиатуре ничего не зажато (кнопки мыши игнорируем).
     """
-    for vk in range(256):
+    for vk in range(1, 256):
         if vk in MOUSE_VKS:
             continue
         state = user32.GetAsyncKeyState(vk)
         if state & 0x8000:  # старший бит = клавиша сейчас зажата
+            logger.info("Pressed key: %s", vk)
             return False
     return True
 
